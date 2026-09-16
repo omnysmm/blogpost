@@ -648,20 +648,23 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Separate Ad Blocks */}
+          {/* Content Blocks */}
           <div>
-            <h3 className="font-bold text-lg text-slate-900 mb-1">{language === 'ru' ? 'Рекламные блоки (отдельно)' : 'Ad blocks (separate)'}</h3>
-            <p className="text-sm text-slate-500 mb-4">{language === 'ru' ? 'Приобретайте рекламные блоки отдельно без подписки' : 'Purchase ad blocks separately without subscription'}</p>
+            <h3 className="font-bold text-lg text-slate-900 mb-1">{language === 'ru' ? 'Блоки контента (отдельно)' : 'Content blocks (separate)'}</h3>
+            <p className="text-sm text-slate-500 mb-4">{language === 'ru' ? 'Приобретайте блоки контента отдельно для расширения возможностей' : 'Purchase content blocks separately to extend features'}</p>
             <div className="grid md:grid-cols-2 gap-4">
               {[
-                { id: 'block-hero', name: t.heroBanner, price: 50000, period: language === 'ru' ? 'день' : 'day', desc: language === 'ru' ? 'Главный баннер на главной' : 'Main banner on homepage' },
-                { id: 'block-sidebar', name: t.sidebarAd, price: 5000, period: language === 'ru' ? 'день' : 'day', desc: language === 'ru' ? 'Боковой блок' : 'Sidebar block' },
-                { id: 'block-inline', name: t.inlineAd, price: 3000, period: language === 'ru' ? 'день' : 'day', desc: language === 'ru' ? 'Встроенная реклама' : 'Inline ad' },
-                { id: 'block-footer', name: t.footerBanner, price: 10000, period: language === 'ru' ? 'день' : 'day', desc: language === 'ru' ? 'Нижний баннер' : 'Footer banner' },
-                { id: 'block-video-preroll', name: language === 'ru' ? 'Pre-roll в видео' : 'Pre-roll in video', price: 80000, period: language === 'ru' ? 'день' : 'day', desc: language === 'ru' ? 'Реклама до видеороликов' : 'Ad before videos' },
-                { id: 'block-video-midroll', name: language === 'ru' ? 'Mid-roll в видео' : 'Mid-roll in video', price: 100000, period: language === 'ru' ? 'день' : 'day', desc: language === 'ru' ? 'Реклама в середине видео' : 'Ad in the middle of video' },
+                { id: 'block-articles', name: language === 'ru' ? 'Публикация статей' : 'Article publishing', price: 1500, period: language === 'ru' ? 'мес' : 'mo', desc: language === 'ru' ? 'Генерация и публикация длинных статей с изображениями' : 'Generate and publish long articles with images', icon: '📝' },
+                { id: 'block-voice', name: language === 'ru' ? 'Генерация голоса' : 'Voice generation', price: 2000, period: language === 'ru' ? 'мес' : 'mo', desc: language === 'ru' ? 'Синтез речи для озвучки контента' : 'Speech synthesis for content voiceover', icon: '🎤' },
+                { id: 'block-video', name: language === 'ru' ? 'Генерация видео' : 'Video generation', price: 3500, period: language === 'ru' ? 'мес' : 'mo', desc: language === 'ru' ? 'Создание видеороликов из текста' : 'Create videos from text', icon: '🎬' },
+                { id: 'block-music', name: language === 'ru' ? 'Генерация музыки' : 'Music generation', price: 2500, period: language === 'ru' ? 'мес' : 'mo', desc: language === 'ru' ? 'Создание музыки и песен' : 'Create music and songs', icon: '🎵' },
+                { id: 'block-images', name: language === 'ru' ? 'Генерация изображений' : 'Image generation', price: 1800, period: language === 'ru' ? 'мес' : 'mo', desc: language === 'ru' ? 'Создание изображений по описанию' : 'Create images from description', icon: '🖼️' },
+                { id: 'block-seo', name: language === 'ru' ? 'SEO-оптимизация' : 'SEO optimization', price: 1200, period: language === 'ru' ? 'мес' : 'mo', desc: language === 'ru' ? 'Автоматическая SEO-оптимизация контента' : 'Automatic content SEO optimization', icon: '🔍' },
+                { id: 'block-analytics', name: language === 'ru' ? 'Расширенная аналитика' : 'Advanced analytics', price: 2200, period: language === 'ru' ? 'мес' : 'mo', desc: language === 'ru' ? 'Детальная аналитика и отчёты' : 'Detailed analytics and reports', icon: '📊' },
+                { id: 'block-schedule', name: language === 'ru' ? 'Автопубликация' : 'Auto-publishing', price: 1000, period: language === 'ru' ? 'мес' : 'mo', desc: language === 'ru' ? 'Публикация по расписанию во все соцсети' : 'Scheduled publishing to all networks', icon: '⏰' },
               ].map(block => (
                 <div key={block.id} className={`bg-white rounded-xl border ${selectedBlocks.includes(block.id) ? 'border-blue-300 bg-blue-50/30' : 'border-slate-100'} p-4 flex items-center gap-4`}>
+                  <div className="text-3xl">{block.icon}</div>
                   <div className="flex-1">
                     <h4 className="font-medium text-slate-900">{block.name}</h4>
                     <p className="text-xs text-slate-500 mt-0.5">{block.desc}</p>
@@ -673,7 +676,7 @@ export default function SettingsPage() {
                       selectedBlocks.includes(block.id) ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                     }`}
                   >
-                    {selectedBlocks.includes(block.id) ? (language === 'ru' ? '✓ Выбрано' : '✓ Selected') : (language === 'ru' ? 'Выбрать' : 'Select')}
+                    {selectedBlocks.includes(block.id) ? (language === 'ru' ? '✓ Подключено' : '✓ Connected') : (language === 'ru' ? 'Подключить' : 'Connect')}
                   </button>
                 </div>
               ))}
@@ -682,18 +685,20 @@ export default function SettingsPage() {
             {selectedBlocks.length > 0 && (
               <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between">
                 <div>
-                  <p className="font-medium text-blue-900">{language === 'ru' ? `Выбрано блоков: ${selectedBlocks.length}` : `Selected blocks: ${selectedBlocks.length}`}</p>
+                  <p className="font-medium text-blue-900">{language === 'ru' ? `Подключено блоков: ${selectedBlocks.length}` : `Connected blocks: ${selectedBlocks.length}`}</p>
                   <p className="text-sm text-blue-700">{language === 'ru' ? 'Итого' : 'Total'}: {formatPrice(selectedBlocks.reduce((sum, id) => {
                     const block = [
-                      { id: 'block-hero', price: 50000 },
-                      { id: 'block-sidebar', price: 5000 },
-                      { id: 'block-inline', price: 3000 },
-                      { id: 'block-footer', price: 10000 },
-                      { id: 'block-video-preroll', price: 80000 },
-                      { id: 'block-video-midroll', price: 100000 },
+                      { id: 'block-articles', price: 1500 },
+                      { id: 'block-voice', price: 2000 },
+                      { id: 'block-video', price: 3500 },
+                      { id: 'block-music', price: 2500 },
+                      { id: 'block-images', price: 1800 },
+                      { id: 'block-seo', price: 1200 },
+                      { id: 'block-analytics', price: 2200 },
+                      { id: 'block-schedule', price: 1000 },
                     ].find(b => b.id === id);
                     return sum + (block?.price || 0);
-                  }, 0))}/{language === 'ru' ? 'день' : 'day'}</p>
+                  }, 0))}/{language === 'ru' ? 'мес' : 'mo'}</p>
                 </div>
                 <button onClick={() => setShowPayModal(true)} className="px-6 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition">
                   {language === 'ru' ? 'Оплатить' : 'Pay'}

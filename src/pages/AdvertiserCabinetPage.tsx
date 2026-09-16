@@ -607,19 +607,121 @@ export default function AdvertiserCabinetPage() {
         </div>
       )}
 
+      {/* Settings Tab - Ad Blocks */}
+      {activeTab === 'settings' && (
+        <div className="space-y-6">
+          <div>
+            <h3 className="font-bold text-xl text-slate-900 mb-1">{language === 'ru' ? 'Настройки рекламы' : 'Ad settings'}</h3>
+            <p className="text-sm text-slate-500 mb-6">{language === 'ru' ? 'Выберите рекламные блоки для размещения вашей рекламы' : 'Select ad blocks for your ad placement'}</p>
+          </div>
+
+          {/* Site Ad Blocks */}
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
+                <Globe size={20} className="text-white" />
+              </div>
+              <div>
+                <h4 className="font-bold text-slate-900">{language === 'ru' ? 'Рекламные блоки на площадке' : 'Site ad blocks'}</h4>
+                <p className="text-xs text-slate-500">{language === 'ru' ? 'Размещение баннеров на страницах BlogPro' : 'Banner placement on BlogPro pages'}</p>
+              </div>
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+              {[
+                { id: 'ad-hero', name: language === 'ru' ? 'Главный баннер (Hero)' : 'Hero Banner', price: 50000, period: language === 'ru' ? 'день' : 'day', desc: language === 'ru' ? 'Самый заметный блок на главной странице' : 'Most visible block on homepage', size: '1200×300', icon: '🏆' },
+                { id: 'ad-sidebar', name: language === 'ru' ? 'Боковой блок' : 'Sidebar Block', price: 5000, period: language === 'ru' ? 'день' : 'day', desc: language === 'ru' ? 'Вертикальный баннер в боковой панели' : 'Vertical banner in sidebar', size: '300×600', icon: '📐' },
+                { id: 'ad-inline', name: language === 'ru' ? 'Встроенный блок' : 'Inline Block', price: 3000, period: language === 'ru' ? 'день' : 'day', desc: language === 'ru' ? 'Реклама внутри контента' : 'Ad inside content', size: '728×90', icon: '📄' },
+                { id: 'ad-footer', name: language === 'ru' ? 'Нижний баннер' : 'Footer Banner', price: 10000, period: language === 'ru' ? 'день' : 'day', desc: language === 'ru' ? 'Баннер внизу каждой страницы' : 'Banner at bottom of every page', size: '970×250', icon: '⬇️' },
+              ].map(block => (
+                <div key={block.id} className="bg-white rounded-xl border border-slate-100 p-4 hover:shadow-md transition">
+                  <div className="flex items-start gap-3">
+                    <div className="text-3xl">{block.icon}</div>
+                    <div className="flex-1">
+                      <h5 className="font-medium text-slate-900">{block.name}</h5>
+                      <p className="text-xs text-slate-500 mt-0.5">{block.desc}</p>
+                      <p className="text-xs text-slate-400 mt-1">{block.size}</p>
+                      <p className="text-lg font-bold text-slate-900 mt-2">{formatPrice(block.price)}<span className="text-xs text-slate-500 font-normal"> / {block.period}</span></p>
+                    </div>
+                  </div>
+                  <button className="w-full mt-3 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-100 transition">
+                    {language === 'ru' ? 'Разместить рекламу' : 'Place ad'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Video Ad Blocks */}
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-violet-600 rounded-xl flex items-center justify-center">
+                <Video size={20} className="text-white" />
+              </div>
+              <div>
+                <h4 className="font-bold text-slate-900">{language === 'ru' ? 'Рекламные блоки в видеороликах' : 'Video ad blocks'}</h4>
+                <p className="text-xs text-slate-500">{language === 'ru' ? 'Встраивание рекламы в видеоконтент' : 'Ad insertion in video content'}</p>
+              </div>
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+              {[
+                { id: 'ad-preroll', name: language === 'ru' ? 'Pre-roll (до видео)' : 'Pre-roll (before video)', price: 80000, period: language === 'ru' ? 'день' : 'day', desc: language === 'ru' ? 'Ролик показывается перед основным контентом' : 'Ad plays before main content', duration: '5-15 сек', icon: '▶️' },
+                { id: 'ad-midroll', name: language === 'ru' ? 'Mid-roll (в середине)' : 'Mid-roll (middle)', price: 100000, period: language === 'ru' ? 'день' : 'day', desc: language === 'ru' ? 'Встраивается в середину видеоролика' : 'Inserted in the middle of video', duration: '10-30 сек', icon: '⏸️' },
+                { id: 'ad-postroll', name: language === 'ru' ? 'Post-roll (после видео)' : 'Post-roll (after video)', price: 40000, period: language === 'ru' ? 'день' : 'day', desc: language === 'ru' ? 'Показывается после окончания видео' : 'Shown after video ends', duration: '5-15 сек', icon: '⏹️' },
+                { id: 'ad-overlay', name: language === 'ru' ? 'Overlay (поверх видео)' : 'Overlay (on video)', price: 20000, period: language === 'ru' ? 'день' : 'day', desc: language === 'ru' ? 'Полупрозрачный баннер поверх видео' : 'Semi-transparent banner over video', duration: language === 'ru' ? 'Постоянно' : 'Constant', icon: '🔲' },
+              ].map(block => (
+                <div key={block.id} className="bg-white rounded-xl border border-slate-100 p-4 hover:shadow-md transition">
+                  <div className="flex items-start gap-3">
+                    <div className="text-3xl">{block.icon}</div>
+                    <div className="flex-1">
+                      <h5 className="font-medium text-slate-900">{block.name}</h5>
+                      <p className="text-xs text-slate-500 mt-0.5">{block.desc}</p>
+                      <p className="text-xs text-slate-400 mt-1">{language === 'ru' ? 'Длительность' : 'Duration'}: {block.duration}</p>
+                      <p className="text-lg font-bold text-slate-900 mt-2">{formatPrice(block.price)}<span className="text-xs text-slate-500 font-normal"> / {block.period}</span></p>
+                    </div>
+                  </div>
+                  <button className="w-full mt-3 py-2 bg-purple-50 text-purple-700 rounded-lg text-sm font-medium hover:bg-purple-100 transition">
+                    {language === 'ru' ? 'Встроить в видео' : 'Insert in video'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Payment Models Info */}
+          <div className="bg-gradient-to-br from-orange-50 to-red-50 rounded-xl p-6 border border-orange-100">
+            <h4 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <DollarSign size={20} className="text-orange-600" />
+              {language === 'ru' ? 'Модели оплаты рекламы' : 'Ad payment models'}
+            </h4>
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {[
+                { model: 'CPM', desc: language === 'ru' ? 'За 1000 показов' : 'Per 1000 views', price: 'от 30₽' },
+                { model: 'CPC', desc: language === 'ru' ? 'За клик' : 'Per click', price: 'от 5₽' },
+                { model: 'CPD', desc: language === 'ru' ? 'За день' : 'Per day', price: language === 'ru' ? 'Фиксированная' : 'Fixed' },
+                { model: 'CPH', desc: language === 'ru' ? 'За час' : 'Per hour', price: language === 'ru' ? 'Гибкая' : 'Flexible' },
+              ].map(item => (
+                <div key={item.model} className="bg-white rounded-lg p-3 border border-orange-100">
+                  <p className="font-bold text-lg text-orange-700">{item.model}</p>
+                  <p className="text-xs text-slate-600 mt-1">{item.desc}</p>
+                  <p className="text-sm font-medium text-slate-900 mt-2">{item.price}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Other Tabs - Placeholder */}
-      {(activeTab === 'creatives' || activeTab === 'billing' || activeTab === 'settings' || activeTab === 'api') && (
+      {(activeTab === 'creatives' || activeTab === 'billing' || activeTab === 'api') && (
         <div className="bg-white rounded-xl border border-slate-100 p-12 text-center">
           <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
             {activeTab === 'creatives' && <Image size={32} className="text-orange-600" />}
             {activeTab === 'billing' && <DollarSign size={32} className="text-orange-600" />}
-            {activeTab === 'settings' && <Settings size={32} className="text-orange-600" />}
             {activeTab === 'api' && <Cpu size={32} className="text-orange-600" />}
           </div>
           <h3 className="text-xl font-bold text-slate-900 mb-2">
             {activeTab === 'creatives' && (language === 'ru' ? 'Управление креативами' : 'Creatives management')}
             {activeTab === 'billing' && (language === 'ru' ? 'Биллинг и оплата' : 'Billing and payment')}
-            {activeTab === 'settings' && (language === 'ru' ? 'Настройки кабинета' : 'Cabinet settings')}
             {activeTab === 'api' && 'API интеграция'}
           </h3>
           <p className="text-slate-500">{language === 'ru' ? 'Раздел в разработке' : 'Section under development'}</p>
