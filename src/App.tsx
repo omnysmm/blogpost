@@ -12,6 +12,7 @@ import AdminPage from './pages/AdminPage';
 import AuthPage from './pages/AuthPage';
 import ProfilePage from './pages/ProfilePage';
 import AdvertiserPage from './pages/AdvertiserPage';
+import SettingsPage from './pages/SettingsPage';
 
 function App() {
   const { currentPage, currentUser } = useStore();
@@ -29,6 +30,7 @@ function App() {
       case 'support': return <SupportPage />;
       case 'admin': return currentUser?.role === 'admin' ? <AdminPage /> : <AuthPage />;
       case 'profile': return currentUser ? <ProfilePage /> : <AuthPage />;
+      case 'settings': return currentUser ? <SettingsPage /> : <AuthPage />;
       case 'auth': return <AuthPage />;
       default: return <HomePage />;
     }

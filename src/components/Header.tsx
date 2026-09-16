@@ -1,6 +1,6 @@
 import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
-import { Home, LayoutDashboard, Wand2, BarChart3, Share2, CreditCard, Megaphone, HeadphonesIcon, Shield, User, Menu, X, Globe, DollarSign } from 'lucide-react';
+import { Home, LayoutDashboard, Wand2, BarChart3, Share2, CreditCard, Megaphone, HeadphonesIcon, Shield, User, Menu, X, Globe, DollarSign, Settings } from 'lucide-react';
 import { useState } from 'react';
 
 export default function Header() {
@@ -86,6 +86,9 @@ export default function Header() {
 
             {currentUser ? (
               <div className="flex items-center gap-2">
+                <button onClick={() => setCurrentPage('settings')} className="p-2 rounded-lg hover:bg-slate-100" title={t.settings}>
+                  <Settings size={18} className="text-slate-600" />
+                </button>
                 <button onClick={() => setCurrentPage('profile')} className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-100">
                   <div className="w-7 h-7 bg-gradient-to-br from-blue-400 to-purple-500 rounded-full flex items-center justify-center">
                     <span className="text-white text-xs font-bold">{currentUser.name[0]}</span>

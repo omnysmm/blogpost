@@ -1,6 +1,6 @@
 import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
-import { User, Mail, CreditCard, Clock, Shield } from 'lucide-react';
+import { User, Mail, CreditCard, Clock, Shield, Settings, Megaphone } from 'lucide-react';
 
 export default function ProfilePage() {
   const { language, currentUser, setCurrentPage } = useStore();
@@ -85,6 +85,32 @@ export default function ProfilePage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Quick Links */}
+      <div className="mt-6 grid md:grid-cols-2 gap-4">
+        <button onClick={() => setCurrentPage('settings')} className="bg-white rounded-xl p-5 border border-slate-100 hover:border-blue-200 hover:shadow-md transition text-left group">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Settings size={18} className="text-white" />
+            </div>
+            <div>
+              <p className="font-bold text-slate-900">{t.settings}</p>
+              <p className="text-xs text-slate-500">{language === 'ru' ? 'Соцсети, расписание, оплата, тарифы' : 'Socials, schedule, payment, plans'}</p>
+            </div>
+          </div>
+        </button>
+        <button onClick={() => setCurrentPage('advertiser')} className="bg-white rounded-xl p-5 border border-slate-100 hover:border-blue-200 hover:shadow-md transition text-left group">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Megaphone size={18} className="text-white" />
+            </div>
+            <div>
+              <p className="font-bold text-slate-900">{language === 'ru' ? 'Рекламный кабинет' : 'Ad Cabinet'}</p>
+              <p className="text-xs text-slate-500">{language === 'ru' ? 'Управление рекламой' : 'Manage advertising'}</p>
+            </div>
+          </div>
+        </button>
       </div>
 
       {/* Settings */}
