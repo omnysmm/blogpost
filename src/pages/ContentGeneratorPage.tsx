@@ -32,10 +32,10 @@ interface AutoTask {
 }
 
 export default function ContentGeneratorPage() {
-  const { language, addPost, currentUser } = useStore();
+  const { language, addPost, currentUser, posts, updatePost } = useStore();
   const t = translations[language];
   
-  const [activeTab, setActiveTab] = useState<'manual' | 'auto'>('manual');
+  const [activeTab, setActiveTab] = useState<'manual' | 'auto' | 'publish'>('manual');
   const [contentType, setContentType] = useState<'post' | 'article' | 'video' | 'music'>('post');
   const [topic, setTopic] = useState('');
   const [mode, setMode] = useState<'auto' | 'manual'>('auto');
@@ -48,6 +48,14 @@ export default function ContentGeneratorPage() {
   const [moderation, setModeration] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedContent, setGeneratedContent] = useState('');
+  
+  // Publishing states
+  const [selectedPost, setSelectedPost] = useState('');
+  const [selectedNetworks, setSelectedNetworks] = useState<string[]>([]);
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState('');
+  const [scheduleTime, setScheduleTime] = useState('');
+  const [published, setPublished] = useState<string[]>([]);
   const [includeAd, setIncludeAd] = useState(false);
   const [adPosition, setAdPosition] = useState('inline');
 
@@ -194,6 +202,40 @@ export default function ContentGeneratorPage() {
     setAutoTasks(prev => prev.filter(task => task.id !== id));
   };
 
+  // Publishing functions
+  const networks = [
+    { id: 'vk', name: 'VKontakte', emoji: '🔵' },
+    { id: 'telegram', name: 'Telegram', emoji: '📨' },
+    { id: 'youtube', name: 'YouTube', emoji: '📺' },
+    { id: 'instagram', name: 'Instagram', emoji: '📷' },
+    { id: 'tiktok', name: 'TikTok', emoji: '🎵' },
+    { id: 'ok', name: 'OK', emoji: '🟠' },
+  ];
+
+  const toggleNetwork = (id: string) => {
+    setSelectedNetworks(prev => prev.includes(id) ? prev.filter(n => n !== id) : [...prev, id]);
+  };
+
+  const handlePublish = () => {
+    if (!selectedPost || selectedNetworks.length === 0) return;
+    setPublished(selectedNetworks);
+    updatePost(selectedPost, {
+      status: 'published',
+      socialNetworks: selectedNetworks,
+      publishedAt: new Date().toISOString(),
+    });
+    setTimeout(() => setPublished([]), 3000);
+  };
+
+  const handleSchedule = () => {
+    if (!selectedPost || !scheduleDate || !scheduleTime) return;
+    updatePost(selectedPost, {
+      status: 'draft',
+      scheduledAt: `${scheduleDate}T${scheduleTime}`,
+      socialNetworks: selectedNetworks,
+    });
+  };
+
   const frequencyLabels = {
     hourly: language === 'ru' ? 'Каждый час' : 'Hourly',
     daily: language === 'ru' ? 'Ежедневно' : 'Daily',
@@ -223,7 +265,7 @@ export default function ContentGeneratorPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold text-slate-900 mb-2">{t.contentGenerator}</h1>
-      <p className="text-slate-600 mb-6">{language === 'ru' ? 'Создавайте контент с помощью AI-нейросетей' : 'Create content with AI neural networks'}</p>
+      <p className="text-slate-600 mb-6">{language === 'ru' ? 'Создавайте и публикуйте контент с помощью AI-нейросетей' : 'Create and publish content with AI neural networks'}</p>
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6 bg-white rounded-xl p-1.5 border border-slate-100">
@@ -249,6 +291,15 @@ export default function ContentGeneratorPage() {
               {autoTasks.filter(t => t.active).length}
             </span>
           )}
+        </button>
+        <button
+          onClick={() => setActiveTab('publish')}
+          className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition ${
+            activeTab === 'publish' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <Share2 size={16} />
+          {language === 'ru' ? 'Публикация' : 'Publishing'}
         </button>
       </div>
 
@@ -720,6 +771,134 @@ export default function ContentGeneratorPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Publishing Tab */}
+      {activeTab === 'publish' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-900">{language === 'ru' ? 'Публикация в соцсети' : 'Social Network Publishing'}</h2>
+              <p className="text-slate-600 mt-1">{language === 'ru' ? 'Публикуйте контент во все соцсети вручную или по расписанию' : 'Publish content to all social networks manually or on schedule'}</p>
+            </div>
+          </div>
+
+          <div className="grid lg:grid-cols-2 gap-6">
+            {/* Left - Select Content */}
+            <div className="space-y-6">
+              <div className="bg-white rounded-xl p-5 border border-slate-100">
+                <h3 className="font-bold text-slate-900 mb-4">{language === 'ru' ? 'Выберите контент' : 'Select Content'}</h3>
+                {posts.length === 0 ? (
+                  <p className="text-slate-400 text-sm">{language === 'ru' ? 'Сначала создайте контент в генераторе' : 'First create content in the generator'}</p>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {posts.map(post => (
+                      <button
+                        key={post.id}
+                        onClick={() => setSelectedPost(post.id)}
+                        className={`w-full text-left p-3 rounded-lg border transition ${
+                          selectedPost === post.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <p className="font-medium text-sm text-slate-900">{post.title}</p>
+                        <p className="text-xs text-slate-500">{post.type} • {new Date(post.createdAt).toLocaleDateString()}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Networks */}
+              <div className="bg-white rounded-xl p-5 border border-slate-100">
+                <h3 className="font-bold text-slate-900 mb-4">{language === 'ru' ? 'Выберите соцсети' : 'Select Networks'}</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {networks.map(network => (
+                    <button
+                      key={network.id}
+                      onClick={() => toggleNetwork(network.id)}
+                      className={`p-3 rounded-lg border flex items-center gap-3 transition ${
+                        selectedNetworks.includes(network.id) ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <span className="text-xl">{network.emoji}</span>
+                      <span className="text-sm font-medium">{network.name}</span>
+                      {selectedNetworks.includes(network.id) && <Check size={16} className="ml-auto text-blue-500" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Right - Publish Actions */}
+            <div className="space-y-6">
+              {/* Publish Now */}
+              <div className="bg-white rounded-xl p-5 border border-slate-100">
+                <h3 className="font-bold text-slate-900 mb-4">{language === 'ru' ? 'Опубликовать сейчас' : 'Publish Now'}</h3>
+                <button
+                  onClick={handlePublish}
+                  disabled={!selectedPost || selectedNetworks.length === 0}
+                  className="w-full py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <Share2 size={18} />
+                  {language === 'ru' ? 'Опубликовать сейчас' : 'Publish now'}
+                </button>
+                {published.length > 0 && (
+                  <div className="mt-3 p-3 bg-green-50 rounded-lg">
+                    <p className="text-sm text-green-700 flex items-center gap-2">
+                      <Check size={16} />
+                      {language === 'ru' ? `Опубликовано в: ${published.join(', ')}` : `Published to: ${published.join(', ')}`}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Schedule */}
+              <div className="bg-white rounded-xl p-5 border border-slate-100">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-slate-900">{language === 'ru' ? 'По расписанию' : 'Schedule'}</h3>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={scheduleEnabled} onChange={e => setScheduleEnabled(e.target.checked)} className="w-4 h-4 text-blue-500 rounded" />
+                    <span className="text-sm">{language === 'ru' ? 'Включить' : 'Enable'}</span>
+                  </label>
+                </div>
+                {scheduleEnabled && (
+                  <div className="space-y-3">
+                    <div className="flex gap-3">
+                      <div className="flex-1">
+                        <label className="text-xs text-slate-500 mb-1 block">{language === 'ru' ? 'Дата' : 'Date'}</label>
+                        <input type="date" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm" />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-xs text-slate-500 mb-1 block">{language === 'ru' ? 'Время' : 'Time'}</label>
+                        <input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm" />
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleSchedule}
+                      disabled={!selectedPost || !scheduleDate || !scheduleTime}
+                      className="w-full py-2 bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <Calendar size={16} />
+                      {language === 'ru' ? 'Запланировать' : 'Schedule'}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* SEO/GEO Info */}
+              <div className="bg-white rounded-xl p-5 border border-slate-100">
+                <h3 className="font-bold text-slate-900 mb-3">{language === 'ru' ? 'Адаптация под соцсети' : 'Network adaptation'}</h3>
+                <div className="space-y-2 text-sm text-slate-600">
+                  <p>✅ {language === 'ru' ? 'SEO-оптимизация для каждой платформы' : 'SEO optimization for each platform'}</p>
+                  <p>✅ {language === 'ru' ? 'GEO-таргетинг по регионам' : 'Geo-targeting by regions'}</p>
+                  <p>✅ {language === 'ru' ? 'Адаптация формата под требования сети' : 'Format adaptation per network'}</p>
+                  <p>✅ {language === 'ru' ? 'Хештеги и ключевые слова' : 'Hashtags and keywords'}</p>
+                  <p>✅ {language === 'ru' ? 'Оптимальное время публикации' : 'Optimal publishing time'}</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

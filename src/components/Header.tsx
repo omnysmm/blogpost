@@ -14,7 +14,6 @@ export default function Header() {
     { id: 'dashboard', icon: LayoutDashboard, label: t.dashboard },
     { id: 'content-generator', icon: Wand2, label: t.contentGenerator },
     { id: 'analytics', icon: BarChart3, label: t.analytics },
-    { id: 'social-publish', icon: Share2, label: t.socialPublish },
     { id: 'subscriptions', icon: CreditCard, label: t.subscriptions },
     { id: 'advertiser', icon: Megaphone, label: language === 'ru' ? 'Рекламный кабинет' : 'Ad Cabinet' },
     { id: 'support', icon: HeadphonesIcon, label: t.support },

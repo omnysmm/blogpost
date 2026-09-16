@@ -4,7 +4,6 @@ import HomePage from './pages/HomePage';
 import DashboardPage from './pages/DashboardPage';
 import ContentGeneratorPage from './pages/ContentGeneratorPage';
 import AnalyticsPage from './pages/AnalyticsPage';
-import SocialPublishPage from './pages/SocialPublishPage';
 import SubscriptionsPage from './pages/SubscriptionsPage';
 import AdvertisingPage from './pages/AdvertisingPage';
 import SupportPage from './pages/SupportPage';
@@ -24,7 +23,7 @@ function App() {
       case 'dashboard': return currentUser ? <DashboardPage /> : <AuthPage />;
       case 'content-generator': return currentUser ? <ContentGeneratorPage /> : <AuthPage />;
       case 'analytics': return currentUser ? <AnalyticsPage /> : <AuthPage />;
-      case 'social-publish': return currentUser ? <SocialPublishPage /> : <AuthPage />;
+      case 'social-publish': return currentUser ? <ContentGeneratorPage /> : <AuthPage />;
       case 'subscriptions': return <SubscriptionsPage />;
       case 'advertising': return <AdvertisingPage />;
       case 'advertiser': return currentUser ? <AdvertiserPage /> : <AuthPage />;
