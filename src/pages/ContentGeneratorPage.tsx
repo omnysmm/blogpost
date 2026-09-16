@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
-import { Wand2, FileText, Video, Music, Image, Mic, Film, Sparkles, Check, Loader2, Volume2, Globe, Shield } from 'lucide-react';
+import { Wand2, FileText, Video, Music, Image, Mic, Film, Sparkles, Check, Loader2, Volume2, Globe, Shield, Clock, Calendar, Play, Pause, Trash2, Plus, Settings, Share2 } from 'lucide-react';
 
 const aiModels = [
   { id: 'yandexgpt', name: 'YandexGPT', type: 'text', free: true },
@@ -14,10 +14,28 @@ const aiModels = [
   { id: 'automl', name: 'AutoML Video', type: 'video', free: true },
 ];
 
+interface AutoTask {
+  id: string;
+  name: string;
+  contentType: 'post' | 'article' | 'video' | 'music';
+  frequency: 'hourly' | 'daily' | 'weekly' | 'custom';
+  schedule: {
+    time: string;
+    days: string[];
+  };
+  networks: string[];
+  topics: string[];
+  active: boolean;
+  lastRun?: string;
+  nextRun?: string;
+  generatedCount: number;
+}
+
 export default function ContentGeneratorPage() {
   const { language, addPost, currentUser } = useStore();
   const t = translations[language];
   
+  const [activeTab, setActiveTab] = useState<'manual' | 'auto'>('manual');
   const [contentType, setContentType] = useState<'post' | 'article' | 'video' | 'music'>('post');
   const [topic, setTopic] = useState('');
   const [mode, setMode] = useState<'auto' | 'manual'>('auto');
@@ -32,6 +50,46 @@ export default function ContentGeneratorPage() {
   const [generatedContent, setGeneratedContent] = useState('');
   const [includeAd, setIncludeAd] = useState(false);
   const [adPosition, setAdPosition] = useState('inline');
+
+  // Auto-generation state
+  const [autoTasks, setAutoTasks] = useState<AutoTask[]>([
+    {
+      id: '1',
+      name: language === 'ru' ? 'Ежедневные посты о технологиях' : 'Daily tech posts',
+      contentType: 'post',
+      frequency: 'daily',
+      schedule: { time: '10:00', days: ['mon', 'tue', 'wed', 'thu', 'fri'] },
+      networks: ['vk', 'telegram'],
+      topics: ['Технологии', 'AI', 'Инновации'],
+      active: true,
+      lastRun: '2024-03-17 10:00',
+      nextRun: '2024-03-18 10:00',
+      generatedCount: 45,
+    },
+    {
+      id: '2',
+      name: language === 'ru' ? 'Еженедельные статьи' : 'Weekly articles',
+      contentType: 'article',
+      frequency: 'weekly',
+      schedule: { time: '15:00', days: ['sat'] },
+      networks: ['vk', 'youtube'],
+      topics: ['Бизнес', 'Маркетинг', 'Стартапы'],
+      active: true,
+      lastRun: '2024-03-16 15:00',
+      nextRun: '2024-03-23 15:00',
+      generatedCount: 12,
+    },
+  ]);
+  const [showCreateTask, setShowCreateTask] = useState(false);
+  const [newTask, setNewTask] = useState<Partial<AutoTask>>({
+    name: '',
+    contentType: 'post',
+    frequency: 'daily',
+    schedule: { time: '10:00', days: ['mon', 'tue', 'wed', 'thu', 'fri'] },
+    networks: [],
+    topics: [],
+    active: true,
+  });
 
   const contentTypes = [
     { id: 'post' as const, icon: FileText, label: language === 'ru' ? 'Пост' : 'Post' },
@@ -97,11 +155,105 @@ export default function ContentGeneratorPage() {
     }, 2000);
   };
 
+  // Auto-generation functions
+  const handleCreateTask = () => {
+    if (!newTask.name || !newTask.topics || newTask.topics.length === 0) return;
+    
+    const task: AutoTask = {
+      id: Date.now().toString(),
+      name: newTask.name || '',
+      contentType: newTask.contentType || 'post',
+      frequency: newTask.frequency || 'daily',
+      schedule: newTask.schedule || { time: '10:00', days: [] },
+      networks: newTask.networks || [],
+      topics: newTask.topics || [],
+      active: true,
+      generatedCount: 0,
+    };
+    
+    setAutoTasks(prev => [...prev, task]);
+    setShowCreateTask(false);
+    setNewTask({
+      name: '',
+      contentType: 'post',
+      frequency: 'daily',
+      schedule: { time: '10:00', days: ['mon', 'tue', 'wed', 'thu', 'fri'] },
+      networks: [],
+      topics: [],
+      active: true,
+    });
+  };
+
+  const toggleTask = (id: string) => {
+    setAutoTasks(prev => prev.map(task => 
+      task.id === id ? { ...task, active: !task.active } : task
+    ));
+  };
+
+  const deleteTask = (id: string) => {
+    setAutoTasks(prev => prev.filter(task => task.id !== id));
+  };
+
+  const frequencyLabels = {
+    hourly: language === 'ru' ? 'Каждый час' : 'Hourly',
+    daily: language === 'ru' ? 'Ежедневно' : 'Daily',
+    weekly: language === 'ru' ? 'Еженедельно' : 'Weekly',
+    custom: language === 'ru' ? 'Настраиваемое' : 'Custom',
+  };
+
+  const dayLabels: Record<string, string> = {
+    mon: language === 'ru' ? 'Пн' : 'Mon',
+    tue: language === 'ru' ? 'Вт' : 'Tue',
+    wed: language === 'ru' ? 'Ср' : 'Wed',
+    thu: language === 'ru' ? 'Чт' : 'Thu',
+    fri: language === 'ru' ? 'Пт' : 'Fri',
+    sat: language === 'ru' ? 'Сб' : 'Sat',
+    sun: language === 'ru' ? 'Вс' : 'Sun',
+  };
+
+  const networkEmojis: Record<string, string> = {
+    vk: '🔵',
+    telegram: '📨',
+    youtube: '📺',
+    instagram: '📷',
+    tiktok: '🎵',
+    ok: '🟠',
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold text-slate-900 mb-2">{t.contentGenerator}</h1>
-      <p className="text-slate-600 mb-8">{language === 'ru' ? 'Создавайте контент с помощью AI-нейросетей' : 'Create content with AI neural networks'}</p>
+      <p className="text-slate-600 mb-6">{language === 'ru' ? 'Создавайте контент с помощью AI-нейросетей' : 'Create content with AI neural networks'}</p>
 
+      {/* Tabs */}
+      <div className="flex gap-2 mb-6 bg-white rounded-xl p-1.5 border border-slate-100">
+        <button
+          onClick={() => setActiveTab('manual')}
+          className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition ${
+            activeTab === 'manual' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <Wand2 size={16} />
+          {language === 'ru' ? 'Ручная генерация' : 'Manual generation'}
+        </button>
+        <button
+          onClick={() => setActiveTab('auto')}
+          className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition ${
+            activeTab === 'auto' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <Sparkles size={16} />
+          {language === 'ru' ? 'Автогенерация' : 'Auto-generation'}
+          {autoTasks.filter(t => t.active).length > 0 && (
+            <span className="px-1.5 py-0.5 bg-white/20 rounded-full text-xs">
+              {autoTasks.filter(t => t.active).length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Manual Generation Tab */}
+      {activeTab === 'manual' && (
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Left Panel - Settings */}
         <div className="lg:col-span-1 space-y-6">
@@ -288,6 +440,288 @@ export default function ContentGeneratorPage() {
           </div>
         </div>
       </div>
+      )}
+
+      {/* Auto-generation Tab */}
+      {activeTab === 'auto' && (
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-900">{language === 'ru' ? 'Автоматическая генерация контента' : 'Automatic content generation'}</h2>
+              <p className="text-slate-600 mt-1">{language === 'ru' ? 'Настройте AI для автоматического создания и публикации контента по расписанию' : 'Set up AI to automatically create and publish content on schedule'}</p>
+            </div>
+            <button
+              onClick={() => setShowCreateTask(true)}
+              className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2"
+            >
+              <Plus size={18} />
+              {language === 'ru' ? 'Создать задачу' : 'Create task'}
+            </button>
+          </div>
+
+          {/* Info Banner */}
+          <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl p-5 border border-blue-100">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center shrink-0">
+                <Sparkles size={20} className="text-white" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-slate-900 mb-1">{language === 'ru' ? 'Как это работает?' : 'How does it work?'}</h3>
+                <p className="text-sm text-slate-700">
+                  {language === 'ru'
+                    ? 'AI автоматически создает контент на основе выбранных тем и публикует его в указанные соцсети по расписанию. Вы можете настроить частоту, время публикации и темы для каждой задачи.'
+                    : 'AI automatically creates content based on selected topics and publishes it to specified social networks on schedule. You can set frequency, publishing time and topics for each task.'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Tasks List */}
+          {autoTasks.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-100 p-12 text-center">
+              <Clock size={48} className="mx-auto text-slate-300 mb-4" />
+              <p className="text-slate-500 mb-4">{language === 'ru' ? 'Нет задач автогенерации' : 'No auto-generation tasks'}</p>
+              <button
+                onClick={() => setShowCreateTask(true)}
+                className="px-6 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition"
+              >
+                {language === 'ru' ? 'Создать первую задачу' : 'Create first task'}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {autoTasks.map(task => (
+                <div key={task.id} className={`bg-white rounded-xl border ${task.active ? 'border-slate-100' : 'border-slate-100 opacity-60'} overflow-hidden hover:shadow-md transition`}>
+                  <div className="p-5">
+                    <div className="flex items-start gap-4">
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                        task.contentType === 'post' ? 'bg-blue-100' :
+                        task.contentType === 'article' ? 'bg-green-100' :
+                        task.contentType === 'video' ? 'bg-purple-100' : 'bg-amber-100'
+                      }`}>
+                        {task.contentType === 'post' && <FileText size={20} className="text-blue-600" />}
+                        {task.contentType === 'article' && <Image size={20} className="text-green-600" />}
+                        {task.contentType === 'video' && <Video size={20} className="text-purple-600" />}
+                        {task.contentType === 'music' && <Music size={20} className="text-amber-600" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-bold text-slate-900">{task.name}</h3>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            task.active ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {task.active ? (language === 'ru' ? 'Активна' : 'Active') : (language === 'ru' ? 'Выключена' : 'Disabled')}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-2 mt-2 text-xs text-slate-500">
+                          <span className="flex items-center gap-1">
+                            <Clock size={12} />
+                            {frequencyLabels[task.frequency]}
+                          </span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1">
+                            <Calendar size={12} />
+                            {task.schedule.time}
+                          </span>
+                          <span>•</span>
+                          <span>{language === 'ru' ? 'Создано' : 'Created'}: {task.generatedCount}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mt-3">
+                          {task.topics.map((topic, i) => (
+                            <span key={i} className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded">
+                              {topic}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {task.networks.map(network => (
+                            <span key={network} className="text-xs px-2 py-1 bg-slate-100 text-slate-700 rounded flex items-center gap-1">
+                              {networkEmojis[network]} {network.toUpperCase()}
+                            </span>
+                          ))}
+                        </div>
+                        {task.lastRun && task.nextRun && (
+                          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-4 text-xs text-slate-500">
+                            <span>{language === 'ru' ? 'Последний запуск' : 'Last run'}: {task.lastRun}</span>
+                            <span>{language === 'ru' ? 'Следующий' : 'Next'}: {task.nextRun}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => toggleTask(task.id)}
+                          className={`p-2 rounded-lg transition ${
+                            task.active ? 'hover:bg-yellow-50 text-yellow-600' : 'hover:bg-green-50 text-green-600'
+                          }`}
+                          title={task.active ? (language === 'ru' ? 'Выключить' : 'Disable') : (language === 'ru' ? 'Включить' : 'Enable')}
+                        >
+                          {task.active ? <Pause size={18} /> : <Play size={18} />}
+                        </button>
+                        <button
+                          onClick={() => deleteTask(task.id)}
+                          className="p-2 hover:bg-red-50 rounded-lg text-red-600 transition"
+                          title={language === 'ru' ? 'Удалить' : 'Delete'}
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Create Task Modal */}
+          {showCreateTask && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowCreateTask(false)}></div>
+              <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="font-bold text-xl text-slate-900">{language === 'ru' ? 'Новая задача автогенерации' : 'New auto-generation task'}</h3>
+                  <button onClick={() => setShowCreateTask(false)} className="p-2 hover:bg-slate-100 rounded-lg">
+                    <span className="text-2xl">×</span>
+                  </button>
+                </div>
+                <div className="p-6 space-y-5">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">{language === 'ru' ? 'Название задачи' : 'Task name'}</label>
+                    <input
+                      type="text"
+                      value={newTask.name || ''}
+                      onChange={e => setNewTask({ ...newTask, name: e.target.value })}
+                      className="w-full p-3 border border-slate-200 rounded-lg"
+                      placeholder={language === 'ru' ? 'Например: Ежедневные посты о технологиях' : 'e.g.: Daily tech posts'}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">{language === 'ru' ? 'Тип контента' : 'Content type'}</label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { id: 'post' as const, icon: FileText, label: language === 'ru' ? 'Пост' : 'Post' },
+                        { id: 'article' as const, icon: Image, label: language === 'ru' ? 'Статья' : 'Article' },
+                        { id: 'video' as const, icon: Video, label: language === 'ru' ? 'Видео' : 'Video' },
+                        { id: 'music' as const, icon: Music, label: language === 'ru' ? 'Музыка' : 'Music' },
+                      ].map(ct => (
+                        <button
+                          key={ct.id}
+                          onClick={() => setNewTask({ ...newTask, contentType: ct.id })}
+                          className={`p-3 rounded-lg border text-sm font-medium flex flex-col items-center gap-1 transition ${
+                            newTask.contentType === ct.id ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <ct.icon size={18} />
+                          {ct.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">{language === 'ru' ? 'Частота генерации' : 'Generation frequency'}</label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {(['hourly', 'daily', 'weekly', 'custom'] as const).map(freq => (
+                        <button
+                          key={freq}
+                          onClick={() => setNewTask({ ...newTask, frequency: freq })}
+                          className={`p-3 rounded-lg border text-sm font-medium transition ${
+                            newTask.frequency === freq ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          {frequencyLabels[freq]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">{language === 'ru' ? 'Время публикации' : 'Publishing time'}</label>
+                      <input
+                        type="time"
+                        value={newTask.schedule?.time || '10:00'}
+                        onChange={e => setNewTask({ ...newTask, schedule: { ...newTask.schedule!, time: e.target.value } })}
+                        className="w-full p-3 border border-slate-200 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">{language === 'ru' ? 'Дни недели' : 'Days of week'}</label>
+                      <div className="flex gap-1">
+                        {['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map(day => (
+                          <button
+                            key={day}
+                            onClick={() => {
+                              const days = newTask.schedule?.days || [];
+                              const newDays = days.includes(day) ? days.filter(d => d !== day) : [...days, day];
+                              setNewTask({ ...newTask, schedule: { ...newTask.schedule!, days: newDays } });
+                            }}
+                            className={`flex-1 py-2 rounded text-xs font-medium transition ${
+                              newTask.schedule?.days.includes(day) ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            {dayLabels[day]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">{language === 'ru' ? 'Темы для генерации' : 'Topics for generation'}</label>
+                    <input
+                      type="text"
+                      value={newTask.topics?.join(', ') || ''}
+                      onChange={e => setNewTask({ ...newTask, topics: e.target.value.split(',').map(t => t.trim()).filter(t => t) })}
+                      className="w-full p-3 border border-slate-200 rounded-lg"
+                      placeholder={language === 'ru' ? 'Технологии, AI, Инновации (через запятую)' : 'Technology, AI, Innovation (comma separated)'}
+                    />
+                    <p className="text-xs text-slate-500 mt-1">{language === 'ru' ? 'AI будет создавать контент на основе этих тем' : 'AI will create content based on these topics'}</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">{language === 'ru' ? 'Публикация в соцсети' : 'Publish to social networks'}</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: 'vk', emoji: '🔵', name: 'VK' },
+                        { id: 'telegram', emoji: '📨', name: 'Telegram' },
+                        { id: 'youtube', emoji: '📺', name: 'YouTube' },
+                        { id: 'instagram', emoji: '📷', name: 'Instagram' },
+                        { id: 'tiktok', emoji: '🎵', name: 'TikTok' },
+                        { id: 'ok', emoji: '🟠', name: 'OK' },
+                      ].map(network => (
+                        <button
+                          key={network.id}
+                          onClick={() => {
+                            const networks = newTask.networks || [];
+                            const newNetworks = networks.includes(network.id) ? networks.filter(n => n !== network.id) : [...networks, network.id];
+                            setNewTask({ ...newTask, networks: newNetworks });
+                          }}
+                          className={`p-3 rounded-lg border text-sm font-medium flex items-center gap-2 transition ${
+                            newTask.networks?.includes(network.id) ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <span className="text-xl">{network.emoji}</span>
+                          {network.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleCreateTask}
+                    disabled={!newTask.name || !newTask.topics || newTask.topics.length === 0}
+                    className="w-full py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium hover:shadow-lg transition-all disabled:opacity-50"
+                  >
+                    {language === 'ru' ? 'Создать задачу' : 'Create task'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
