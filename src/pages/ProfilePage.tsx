@@ -100,14 +100,14 @@ export default function ProfilePage() {
             </div>
           </div>
         </button>
-        <button onClick={() => setCurrentPage('advertiser')} className="bg-white rounded-xl p-5 border border-slate-100 hover:border-blue-200 hover:shadow-md transition text-left group">
+        <button onClick={() => setCurrentPage('advertiser-cabinet')} className="bg-white rounded-xl p-5 border border-slate-100 hover:border-blue-200 hover:shadow-md transition text-left group">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
               <Megaphone size={18} className="text-white" />
             </div>
             <div>
               <p className="font-bold text-slate-900">{language === 'ru' ? 'Рекламный кабинет' : 'Ad Cabinet'}</p>
-              <p className="text-xs text-slate-500">{language === 'ru' ? 'Управление рекламой' : 'Manage advertising'}</p>
+              <p className="text-xs text-slate-500">{language === 'ru' ? 'Кампании, таргетинг, аналитика, креативы' : 'Campaigns, targeting, analytics, creatives'}</p>
             </div>
           </div>
         </button>

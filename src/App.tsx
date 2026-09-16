@@ -12,6 +12,7 @@ import AdminPage from './pages/AdminPage';
 import AuthPage from './pages/AuthPage';
 import ProfilePage from './pages/ProfilePage';
 import AdvertiserPage from './pages/AdvertiserPage';
+import AdvertiserCabinetPage from './pages/AdvertiserCabinetPage';
 import SettingsPage from './pages/SettingsPage';
 
 function App() {
@@ -27,6 +28,7 @@ function App() {
       case 'subscriptions': return <SubscriptionsPage />;
       case 'advertising': return <AdvertisingPage />;
       case 'advertiser': return currentUser ? <AdvertiserPage /> : <AuthPage />;
+      case 'advertiser-cabinet': return currentUser ? <AdvertiserCabinetPage /> : <AuthPage />;
       case 'support': return <SupportPage />;
       case 'admin': return currentUser?.role === 'admin' ? <AdminPage /> : <AuthPage />;
       case 'profile': return currentUser ? <ProfilePage /> : <AuthPage />;
