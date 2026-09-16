@@ -25,7 +25,7 @@ function App() {
       case 'social-publish': return currentUser ? <SocialPublishPage /> : <AuthPage />;
       case 'subscriptions': return <SubscriptionsPage />;
       case 'advertising': return <AdvertisingPage />;
-      case 'advertiser': return currentUser?.role === 'advertiser' ? <AdvertiserPage /> : <AuthPage />;
+      case 'advertiser': return currentUser ? <AdvertiserPage /> : <AuthPage />;
       case 'support': return <SupportPage />;
       case 'admin': return currentUser?.role === 'admin' ? <AdminPage /> : <AuthPage />;
       case 'profile': return currentUser ? <ProfilePage /> : <AuthPage />;

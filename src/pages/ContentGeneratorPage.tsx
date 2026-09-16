@@ -63,7 +63,16 @@ export default function ContentGeneratorPage() {
       }
 
       if (includeAd) {
-        content += `\n\n---\n📢 ${language === 'ru' ? '[Рекламный блок]' : '[Ad Block]'} — ${language === 'ru' ? 'Ваша реклама здесь' : 'Your ad here'}\n---`;
+        const adLabels: Record<string, string> = {
+          'inline': language === 'ru' ? '📢 [Рекламный блок — в тексте]' : '📢 [Ad block — in text]',
+          'bottom': language === 'ru' ? '📢 [Рекламный блок — внизу]' : '📢 [Ad block — bottom]',
+          'top': language === 'ru' ? '📢 [Рекламный блок — в начале]' : '📢 [Ad block — top]',
+          'video-preroll': language === 'ru' ? '🎬 [PRE-ROLL реклама — встраивается ДО видео из рекламного кабинета]' : '🎬 [PRE-ROLL ad — inserted BEFORE video from ad cabinet]',
+          'video-midroll': language === 'ru' ? '🎬 [MID-ROLL реклама — встраивается В СЕРЕДИНУ видео из рекламного кабинета]' : '🎬 [MID-ROLL ad — inserted IN MIDDLE of video from ad cabinet]',
+          'video-postroll': language === 'ru' ? '🎬 [POST-ROLL реклама — встраивается ПОСЛЕ видео из рекламного кабинета]' : '🎬 [POST-ROLL ad — inserted AFTER video from ad cabinet]',
+          'video-overlay': language === 'ru' ? '🎬 [OVERLAY реклама — полупрозрачный баннер ПОВЕРХ видео]' : '🎬 [OVERLAY ad — semi-transparent banner OVER video]',
+        };
+        content += `\n\n---\n${adLabels[adPosition] || '📢 [Ad block]'}\n---`;
       }
 
       setGeneratedContent(content);
@@ -187,11 +196,18 @@ export default function ContentGeneratorPage() {
               <span className="text-sm">{language === 'ru' ? '📢 Включить рекламный блок' : '📢 Include ad block'}</span>
             </label>
             {includeAd && (
-              <select value={adPosition} onChange={e => setAdPosition(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm ml-7">
-                <option value="inline">{language === 'ru' ? 'В середине текста' : 'Middle of text'}</option>
-                <option value="bottom">{language === 'ru' ? 'В конце' : 'At the bottom'}</option>
-                <option value="top">{language === 'ru' ? 'В начале' : 'At the top'}</option>
-              </select>
+              <div className="ml-7 space-y-2">
+                <select value={adPosition} onChange={e => setAdPosition(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm">
+                  <option value="inline">{language === 'ru' ? 'В середине текста' : 'Middle of text'}</option>
+                  <option value="bottom">{language === 'ru' ? 'В конце' : 'At the bottom'}</option>
+                  <option value="top">{language === 'ru' ? 'В начале' : 'At the top'}</option>
+                  <option value="video-preroll">{language === 'ru' ? '🎬 Pre-roll (до видео)' : '🎬 Pre-roll (before video)'}</option>
+                  <option value="video-midroll">{language === 'ru' ? '🎬 Mid-roll (в середине видео)' : '🎬 Mid-roll (in video middle)'}</option>
+                  <option value="video-postroll">{language === 'ru' ? '🎬 Post-roll (после видео)' : '🎬 Post-roll (after video)'}</option>
+                  <option value="video-overlay">{language === 'ru' ? '🎬 Overlay (поверх видео)' : '🎬 Overlay (on video)'}</option>
+                </select>
+                <p className="text-xs text-slate-500">{language === 'ru' ? '💡 Реклама из рекламного кабинета автоматически встраивается в видеоролики' : '💡 Ads from the ad cabinet are automatically inserted into videos'}</p>
+              </div>
             )}
           </div>
         </div>

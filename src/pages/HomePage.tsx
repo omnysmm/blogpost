@@ -145,10 +145,10 @@ export default function HomePage() {
           </div>
           <div>
             <p className="font-bold text-slate-900">{language === 'ru' ? 'Продвигайте свой бренд' : 'Promote your brand'}</p>
-            <p className="text-slate-600 text-sm">{language === 'ru' ? 'Размещение рекламы на BlogPro — от 3 000 ₽/день' : 'Ad placement on BlogPro — from 3,000 RUB/day'}</p>
+            <p className="text-slate-600 text-sm">{language === 'ru' ? 'Рекламный кабинет — размещение на площадке и в видеороликах. От 3 000 ₽/день' : 'Ad cabinet — placement on site and in videos. From 3,000 RUB/day'}</p>
           </div>
-          <button onClick={() => setCurrentPage('advertising')} className="ml-auto px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 transition">
-            {language === 'ru' ? 'Разместить' : 'Place Ad'}
+          <button onClick={() => setCurrentPage(currentUser ? 'advertiser' : 'auth')} className="ml-auto px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 transition">
+            {language === 'ru' ? 'Рекламный кабинет' : 'Ad Cabinet'}
           </button>
         </div>
       </div>

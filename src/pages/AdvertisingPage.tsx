@@ -3,7 +3,7 @@ import { translations } from '../i18n/translations';
 import { Megaphone, Eye, MousePointer, Image, TrendingUp } from 'lucide-react';
 
 export default function AdvertisingPage() {
-  const { language, currency, adBlocks, setCurrentPage } = useStore();
+  const { language, currency, adBlocks, setCurrentPage, currentUser } = useStore();
   const t = translations[language];
 
   const formatPrice = (price: number) => {
@@ -64,7 +64,7 @@ export default function AdvertisingPage() {
               </div>
             </div>
             <div className="mt-4 flex gap-2">
-              <button onClick={() => setCurrentPage('advertiser')} className="flex-1 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition">
+              <button onClick={() => setCurrentPage(currentUser ? 'advertiser' : 'auth')} className="flex-1 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition">
                 {language === 'ru' ? 'Разместить' : 'Place Ad'}
               </button>
               <button className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 transition">

@@ -1,6 +1,6 @@
 import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
-import { FileText, Video, Music, Image, Eye, Heart, Share2, Clock, TrendingUp } from 'lucide-react';
+import { FileText, Video, Music, Image, Eye, Heart, Share2, Clock, TrendingUp, Megaphone } from 'lucide-react';
 
 export default function DashboardPage() {
   const { language, currentUser, posts, analytics, setCurrentPage } = useStore();
@@ -61,12 +61,13 @@ export default function DashboardPage() {
       </div>
 
       {/* Quick Actions */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         {[
-          { icon: FileText, label: language === 'ru' ? 'Создать пост' : 'Create Post', page: 'content-generator', type: 'post' },
-          { icon: Video, label: language === 'ru' ? 'Создать видео' : 'Create Video', page: 'content-generator', type: 'video' },
-          { icon: Music, label: language === 'ru' ? 'Создать музыку' : 'Create Music', page: 'content-generator', type: 'music' },
-          { icon: Image, label: language === 'ru' ? 'Создать статью' : 'Create Article', page: 'content-generator', type: 'article' },
+          { icon: FileText, label: language === 'ru' ? 'Создать пост' : 'Create Post', page: 'content-generator' },
+          { icon: Video, label: language === 'ru' ? 'Создать видео' : 'Create Video', page: 'content-generator' },
+          { icon: Music, label: language === 'ru' ? 'Создать музыку' : 'Create Music', page: 'content-generator' },
+          { icon: Image, label: language === 'ru' ? 'Создать статью' : 'Create Article', page: 'content-generator' },
+          { icon: Megaphone, label: language === 'ru' ? 'Рекламный кабинет' : 'Ad Cabinet', page: 'advertiser' },
         ].map((action, i) => (
           <button key={i} onClick={() => setCurrentPage(action.page)} className="bg-white rounded-xl p-5 border border-slate-100 hover:border-blue-200 hover:shadow-lg transition-all text-left group">
             <action.icon size={24} className="text-blue-500 mb-3 group-hover:scale-110 transition-transform" />

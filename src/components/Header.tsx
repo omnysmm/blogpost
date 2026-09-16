@@ -16,7 +16,7 @@ export default function Header() {
     { id: 'analytics', icon: BarChart3, label: t.analytics },
     { id: 'social-publish', icon: Share2, label: t.socialPublish },
     { id: 'subscriptions', icon: CreditCard, label: t.subscriptions },
-    { id: 'advertising', icon: Megaphone, label: t.advertising },
+    { id: 'advertiser', icon: Megaphone, label: language === 'ru' ? 'Рекламный кабинет' : 'Ad Cabinet' },
     { id: 'support', icon: HeadphonesIcon, label: t.support },
   ];
 
