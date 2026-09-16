@@ -3,7 +3,7 @@ export const translations = {
     // Navigation
     home: 'Главная',
     dashboard: 'Панель управления',
-    contentGenerator: 'Генерация контента',
+    contentGenerator: 'Генерация и публикация контента',
     analytics: 'Аналитика',
     socialPublish: 'Публикация в соцсети',
     subscriptions: 'Подписки',
@@ -111,7 +111,7 @@ export const translations = {
   en: {
     home: 'Home',
     dashboard: 'Dashboard',
-    contentGenerator: 'Content Generator',
+    contentGenerator: 'Content Generation & Publishing',
     analytics: 'Analytics',
     socialPublish: 'Social Publishing',
     subscriptions: 'Subscriptions',
