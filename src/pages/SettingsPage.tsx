@@ -265,7 +265,7 @@ export default function SettingsPage() {
               {/* Expanded settings */}
               {editingSocial === social.id && social.connected && (
                 <div className="px-5 pb-5 border-t border-slate-100 pt-4 space-y-4">
-                  {social.method === 'api' && (
+                  {social.method === 'api' && (<>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">API Key</label>
                       <div className="flex gap-2">
@@ -298,7 +298,7 @@ export default function SettingsPage() {
                         <p className="text-xs text-slate-500 mt-1">{language === 'ru' ? 'ID канала, группы или пользователя для публикации' : 'Channel, group or user ID for publishing'}</p>
                       </div>
                     )}
-                  )}
+                  </>)}
                   {social.method === 'manual' && (
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">{language === 'ru' ? 'Логин / Имя аккаунта' : 'Login / Account name'}</label>
