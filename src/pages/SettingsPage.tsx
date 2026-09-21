@@ -147,11 +147,11 @@ export default function SettingsPage() {
   };
 
   const updateApiKey = (id: string, apiKey: string) => {
-    saveSocials(socials.map(s => s.id === id ? { ...s, apiKey } : s));
+    saveSocials(socials.map(s => s.id === id ? { ...s, apiKey, connected: true, method: 'api' as const } : s));
   };
 
   const updateLogin = (id: string, login: string) => {
-    saveSocials(socials.map(s => s.id === id ? { ...s, login } : s));
+    saveSocials(socials.map(s => s.id === id ? { ...s, login, connected: true, method: 'manual' as const } : s));
   };
 
   const toggleAutoPublish = (id: string) => {

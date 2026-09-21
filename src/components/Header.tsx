@@ -39,7 +39,7 @@ export default function Header() {
           </div>
 
           {/* Navigation — visible only after login */}
-          {currentUser && (
+          {currentUser && currentPage !== 'home' && (
             <nav className="hidden lg:flex items-center gap-1">
               {navItems.map(item => (
                 <button

@@ -15,7 +15,7 @@ function getTelegramFromStorage(): { token: string; chatId: string } | null {
     const saved = localStorage.getItem('blogpost_socials');
     if (!saved) return null;
     const socials = JSON.parse(saved);
-    const tg = socials.find((s: any) => s.network === 'telegram' && s.connected && s.apiKey);
+    const tg = socials.find((s: any) => s.network === 'telegram' && s.apiKey && s.apiKey.trim() !== '');
     if (!tg) return null;
     return { token: tg.apiKey, chatId: tg.accountId || '' };
   } catch {
