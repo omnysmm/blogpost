@@ -80,6 +80,17 @@ export default function SettingsPage() {
   };
   const [editingSocial, setEditingSocial] = useState<string | null>(null);
   const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({});
+  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const showSaveSuccess = (msg: string) => {
+    setSaveMessage({ type: 'success', text: msg });
+    setTimeout(() => setSaveMessage(null), 3000);
+  };
+
+  const showSaveError = (msg: string) => {
+    setSaveMessage({ type: 'error', text: msg });
+    setTimeout(() => setSaveMessage(null), 5000);
+  };
 
   // ===== SCHEDULE =====
   const [schedules, setSchedules] = useState<ScheduleItem[]>([
@@ -222,6 +233,14 @@ export default function SettingsPage() {
         ))}
       </div>
 
+      {/* Save message toast */}
+      {saveMessage && (
+        <div className={`fixed top-20 right-4 z-50 px-5 py-3 rounded-xl shadow-lg text-sm font-medium flex items-center gap-2 animate-fade-in ${saveMessage.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>
+          {saveMessage.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+          {saveMessage.text}
+        </div>
+      )}
+
       {/* ============ SOCIAL TAB ============ */}
       {activeTab === 'social' && (
         <div className="space-y-4">
@@ -333,7 +352,17 @@ export default function SettingsPage() {
                       <p className="text-xs text-slate-500">{language === 'ru' ? 'Контент будет публиковаться в этой сети автоматически' : 'Content will be published to this network automatically'}</p>
                     </div>
                   </label>
-                  <button className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      try {
+                        saveSocials(socials);
+                        showSaveSuccess(language === 'ru' ? 'Настройки соцсетей сохранены' : 'Social network settings saved');
+                      } catch (e: any) {
+                        showSaveError(language === 'ru' ? `Ошибка сохранения: ${e.message}` : `Save error: ${e.message}`);
+                      }
+                    }}
+                    className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition flex items-center gap-2"
+                  >
                     <Save size={14} /> {t.save}
                   </button>
                 </div>
