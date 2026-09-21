@@ -454,7 +454,7 @@ export default function AdvertiserPage() {
               </div>
               <div>
                 <h3 className="font-bold text-xl text-slate-900">{language === 'ru' ? 'Тарифы на площадке' : 'Site Tariffs'}</h3>
-                <p className="text-sm text-slate-500">{language === 'ru' ? 'Размещение баннеров на страницах BlogPro' : 'Banner placement on BlogPro pages'}</p>
+                <p className="text-sm text-slate-500">{language === 'ru' ? 'Размещение баннеров на страницах BlogPost' : 'Banner placement on BlogPost pages'}</p>
               </div>
             </div>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">

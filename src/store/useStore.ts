@@ -1,60 +1,9 @@
 import { create } from 'zustand';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { generateText, generateImage, generateAudio, checkGenerationLimit } from '../services/ai';
+import type { Language, Currency, Subscription, UserRole, User, Post, AdBlock, Analytics } from './types';
 
-export type Language = 'ru' | 'en';
-export type Currency = 'RUB' | 'USD' | 'CNY';
-export type Subscription = 'free' | 'basic' | 'pro' | 'premium';
-export type UserRole = 'user' | 'advertiser' | 'admin';
-
-export interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  subscription: Subscription;
-  registeredAt: string;
-  freeTrialEnd?: string;
-  avatar?: string;
-}
-
-export interface Post {
-  id: string;
-  title: string;
-  content: string;
-  topic: string;
-  type: 'post' | 'article' | 'video' | 'music';
-  status: 'draft' | 'generating' | 'ready' | 'published' | 'moderating';
-  createdAt: string;
-  publishedAt?: string;
-  socialNetworks: string[];
-  scheduledAt?: string;
-  hasAudio: boolean;
-  hasVideo: boolean;
-  hasImage: boolean;
-  aiModel?: string;
-  views: number;
-  likes: number;
-}
-
-export interface AdBlock {
-  id: string;
-  title: string;
-  position: string;
-  type: 'views' | 'clicks' | 'banner';
-  pricePerDay: number;
-  imageUrl?: string;
-  link: string;
-  active: boolean;
-  impressions: number;
-  clicks: number;
-}
-
-export interface Analytics {
-  date: string;
-  views: number;
-  likes: number;
-  shares: number;
-  network: string;
-}
+export type { Language, Currency, Subscription, UserRole, User, Post, AdBlock, Analytics };
 
 interface AppState {
   language: Language;
@@ -65,7 +14,7 @@ interface AppState {
   analytics: Analytics[];
   isSidebarOpen: boolean;
   currentPage: string;
-  
+
   setLanguage: (lang: Language) => void;
   setCurrency: (curr: Currency) => void;
   setCurrentUser: (user: User | null) => void;
@@ -76,11 +25,13 @@ interface AppState {
   deletePost: (id: string) => void;
   addAdBlock: (block: AdBlock) => void;
   updateAdBlock: (id: string, updates: Partial<AdBlock>) => void;
-  login: (email: string, password: string) => boolean;
-  register: (name: string, email: string, password: string) => boolean;
+  login: (email: string, password: string) => Promise<boolean>;
+  register: (name: string, email: string, password: string) => Promise<boolean>;
   logout: () => void;
+  generateAIContent: (prompt: string, type: string) => Promise<string>;
 }
 
+// ═══ Mock Data ═══
 const defaultAnalytics: Analytics[] = [];
 const networks = ['vk', 'telegram', 'youtube', 'instagram', 'tiktok', 'ok'];
 for (let i = 29; i >= 0; i--) {
@@ -92,7 +43,7 @@ for (let i = 29; i >= 0; i--) {
       views: Math.floor(Math.random() * 5000) + 100,
       likes: Math.floor(Math.random() * 500) + 10,
       shares: Math.floor(Math.random() * 100) + 5,
-      network
+      network,
     });
   });
 }
@@ -104,6 +55,21 @@ const defaultAdBlocks: AdBlock[] = [
   { id: '4', title: 'Нижний баннер', position: 'footer', type: 'banner', pricePerDay: 10000, link: '#', active: false, impressions: 5600, clicks: 78 },
 ];
 
+// ═══ Auth helpers (localStorage fallback) ═══
+function getLocalUsers(): any[] {
+  try { return JSON.parse(localStorage.getItem('blogpro_users') || '[]'); } catch { return []; }
+}
+function saveLocalUsers(users: any[]) {
+  localStorage.setItem('blogpro_users', JSON.stringify(users));
+}
+
+// ═══ Read hash for legal pages ═══
+function getInitialPage(): string {
+  const hash = window.location.hash.replace('#/', '');
+  if (hash.startsWith('legal/')) return hash;
+  return 'home';
+}
+
 export const useStore = create<AppState>((set, get) => ({
   language: 'ru',
   currency: 'RUB',
@@ -112,36 +78,57 @@ export const useStore = create<AppState>((set, get) => ({
   adBlocks: defaultAdBlocks,
   analytics: defaultAnalytics,
   isSidebarOpen: false,
-  currentPage: 'home',
+  currentPage: getInitialPage(),
 
-  setLanguage: (lang) => set({ language: lang }),
+  setLanguage: (lang) => set({ language: lang, currency: lang === 'zh' ? 'CNY' : 'RUB' }),
   setCurrency: (curr) => set({ currency: curr }),
   setCurrentUser: (user) => set({ currentUser: user }),
   setCurrentPage: (page) => set({ currentPage: page }),
   toggleSidebar: () => set({ isSidebarOpen: !get().isSidebarOpen }),
-  
+
   addPost: (post) => set({ posts: [...get().posts, post] }),
   updatePost: (id, updates) => set({ posts: get().posts.map(p => p.id === id ? { ...p, ...updates } : p) }),
   deletePost: (id) => set({ posts: get().posts.filter(p => p.id !== id) }),
-  
   addAdBlock: (block) => set({ adBlocks: [...get().adBlocks, block] }),
   updateAdBlock: (id, updates) => set({ adBlocks: get().adBlocks.map(b => b.id === id ? { ...b, ...updates } : b) }),
-  
-  login: (email, password) => {
+
+  // ═══ Login ═══
+  login: async (email, password) => {
+    // Supabase auth
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (!error && data.user) {
+          const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single();
+          if (profile) {
+            set({ currentUser: profile as User });
+            return true;
+          }
+        }
+        // Supabase auth failed — fall through to local fallbacks
+      } catch (e) {
+        console.error('Supabase login error:', e);
+        // Fall through to local fallbacks
+      }
+    }
+
+    // Fallback: admin shortcut
     if (email === 'admin' && password === 'admin') {
       set({
         currentUser: {
           id: 'admin-1',
           name: 'Администратор',
-          email: 'admin@blogpro.ru',
+          email: 'admin@blogpost.ru',
           role: 'admin',
           subscription: 'premium',
-          registeredAt: new Date().toISOString()
-        }
+          registeredAt: new Date().toISOString(),
+        },
       });
       return true;
     }
-    const users = JSON.parse(localStorage.getItem('blogpro_users') || '[]');
+
+    // Fallback: localStorage
+    const users = getLocalUsers();
     const user = users.find((u: any) => u.email === email);
     if (user && user.password === password) {
       const { password: _, ...userWithoutPassword } = user;
@@ -150,10 +137,34 @@ export const useStore = create<AppState>((set, get) => ({
     }
     return false;
   },
-  
-  register: (name, email, password) => {
-    const users = JSON.parse(localStorage.getItem('blogpro_users') || '[]');
+
+  // ═══ Register ═══
+  register: async (name, email, password) => {
+    // Supabase auth
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { name } },
+        });
+        if (error || !data.user) return false;
+
+        // Profile is auto-created by trigger
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single();
+        if (profile) {
+          set({ currentUser: profile as User });
+          return true;
+        }
+      } catch (e) {
+        console.error('Supabase register error:', e);
+      }
+    }
+
+    // Fallback: localStorage
+    const users = getLocalUsers();
     if (users.find((u: any) => u.email === email)) return false;
+
     const newUser = {
       id: Date.now().toString(),
       name,
@@ -162,14 +173,42 @@ export const useStore = create<AppState>((set, get) => ({
       role: 'user' as UserRole,
       subscription: 'free' as Subscription,
       registeredAt: new Date().toISOString(),
-      freeTrialEnd: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
+      freeTrialEnd: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
     };
     users.push(newUser);
-    localStorage.setItem('blogpro_users', JSON.stringify(users));
+    saveLocalUsers(users);
     const { password: _, ...userWithoutPassword } = newUser;
     set({ currentUser: userWithoutPassword });
     return true;
   },
-  
-  logout: () => set({ currentUser: null, currentPage: 'home' })
+
+  // ═══ Logout ═══
+  logout: async () => {
+    if (isSupabaseConfigured) {
+      await supabase.auth.signOut();
+    }
+    set({ currentUser: null, currentPage: 'home' });
+  },
+
+  // ═══ AI Content Generation ═══
+  generateAIContent: async (prompt, type) => {
+    const user = get().currentUser;
+    if (!user) throw new Error('Необходимо войти в аккаунт');
+
+    // Check limits
+    const { allowed, remaining } = await checkGenerationLimit(user.id, user.subscription);
+    if (!allowed) throw new Error('Лимит генераций исчерпан. Обновите тариф.');
+
+    switch (type) {
+      case 'post':
+      case 'article':
+        return await generateText({ prompt, language: get().language });
+      case 'image':
+        return await generateImage({ prompt });
+      case 'audio':
+        return await generateAudio({ text: prompt });
+      default:
+        return await generateText({ prompt, language: get().language });
+    }
+  },
 }));

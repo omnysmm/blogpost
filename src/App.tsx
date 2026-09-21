@@ -13,6 +13,7 @@ import ProfilePage from './pages/ProfilePage';
 import AdvertiserPage from './pages/AdvertiserPage';
 import AdvertiserCabinetPage from './pages/AdvertiserCabinetPage';
 import SettingsPage from './pages/SettingsPage';
+import LegalPage from './pages/LegalPage';
 
 function App() {
   const { currentPage, currentUser } = useStore();
@@ -33,6 +34,11 @@ function App() {
       case 'profile': return currentUser ? <ProfilePage /> : <AuthPage />;
       case 'settings': return currentUser ? <SettingsPage /> : <AuthPage />;
       case 'auth': return <AuthPage />;
+      case 'legal-terms': case 'legal/terms': return <LegalPage docType="terms" />;
+      case 'legal-privacy': case 'legal/privacy': return <LegalPage docType="privacy" />;
+      case 'legal-offer': case 'legal/offer': return <LegalPage docType="offer" />;
+      case 'legal-rules': case 'legal/rules': return <LegalPage docType="rules" />;
+      case 'legal-consent': case 'legal/consent': return <LegalPage docType="consent" />;
       default: return <HomePage />;
     }
   };

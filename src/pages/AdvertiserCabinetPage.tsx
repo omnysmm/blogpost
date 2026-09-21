@@ -623,7 +623,7 @@ export default function AdvertiserCabinetPage() {
               </div>
               <div>
                 <h4 className="font-bold text-slate-900">{language === 'ru' ? 'Рекламные блоки на площадке' : 'Site ad blocks'}</h4>
-                <p className="text-xs text-slate-500">{language === 'ru' ? 'Размещение баннеров на страницах BlogPro' : 'Banner placement on BlogPro pages'}</p>
+                <p className="text-xs text-slate-500">{language === 'ru' ? 'Размещение баннеров на страницах BlogPost' : 'Banner placement on BlogPost pages'}</p>
               </div>
             </div>
             <div className="grid md:grid-cols-2 gap-4">

@@ -23,7 +23,7 @@ export default function AdvertisingPage() {
     <div className="max-w-7xl mx-auto px-4 py-8">
       <div className="text-center mb-12">
         <h1 className="text-3xl font-bold text-slate-900 mb-2">{t.advertising}</h1>
-        <p className="text-slate-600">{language === 'ru' ? 'Разместите рекламу на BlogPro и охватите тысячи блогеров' : 'Place ads on BlogPro and reach thousands of bloggers'}</p>
+        <p className="text-slate-600">{language === 'ru' ? 'Разместите рекламу на BlogPost и охватите тысячи блогеров' : 'Place ads on BlogPost and reach thousands of bloggers'}</p>
       </div>
 
       {/* Stats */}

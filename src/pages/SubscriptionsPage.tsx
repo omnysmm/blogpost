@@ -1,10 +1,14 @@
+import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
-import { Check, Star, Zap, Crown } from 'lucide-react';
+import { Check, Star, Zap, Crown, CreditCard, ArrowRight, X, Sparkles } from 'lucide-react';
 
 export default function SubscriptionsPage() {
-  const { language, currency, currentUser } = useStore();
+  const { language, currency, currentUser, setCurrentPage } = useStore();
   const t = translations[language];
+  const [hoveredPlan, setHoveredPlan] = useState<number | null>(null);
+  const [selectedBlocks, setSelectedBlocks] = useState<string[]>([]);
+  const [showPayModal, setShowPayModal] = useState(false);
 
   const formatPrice = (price: number) => {
     if (currency === 'USD') return `$${Math.round(price / 90)}`;
@@ -20,161 +24,225 @@ export default function SubscriptionsPage() {
       period: language === 'ru' ? '48 часов' : '48 hours',
       icon: Star,
       color: 'from-slate-400 to-slate-500',
-      features: language === 'ru' ? [
-        'Полный доступ на 48 часов',
-        'Генерация до 10 постов',
-        'Базовая аналитика',
-        'Публикация в 2 соцсети',
-      ] : [
-        'Full access for 48 hours',
-        'Up to 10 posts',
-        'Basic analytics',
-        'Publish to 2 networks',
-      ],
+      desc: language === 'ru' ? 'Попробуйте все функции бесплатно' : 'Try all features for free',
+      features: language === 'ru'
+        ? ['Полный доступ ко всем AI-моделям', 'Публикация во все соцсети', 'Базовая аналитика', 'AI-поддержка 24/7']
+        : ['Full access to all AI models', 'Publish to all social networks', 'Basic analytics', 'AI support 24/7'],
     },
     {
       id: 'basic',
-      name: t.basicPlan,
+      name: language === 'ru' ? 'Базовый' : 'Basic',
       price: 990,
       icon: Zap,
       color: 'from-blue-500 to-blue-600',
-      features: language === 'ru' ? [
-        'Генерация до 50 постов/мес',
-        'Публикация в 3 соцсети',
-        'Базовая озвучка',
-        'Стандартная аналитика',
-        'Поддержка по email',
-      ] : [
-        'Up to 50 posts/month',
-        'Publish to 3 networks',
-        'Basic voiceover',
-        'Standard analytics',
-        'Email support',
-      ],
+      desc: language === 'ru' ? 'Для начинающих блогеров' : 'For beginner bloggers',
+      features: language === 'ru'
+        ? ['10 генераций статей в месяц', '2 соцсети на выбор', 'SEO-оптимизация', 'Планировщик публикаций']
+        : ['10 article generations per month', '2 social networks of choice', 'SEO optimization', 'Post scheduler'],
     },
     {
       id: 'pro',
-      name: t.proPlan,
-      price: 2990,
+      name: language === 'ru' ? 'Профессиональный' : 'Professional',
+      price: 4990,
       icon: Star,
-      color: 'from-purple-500 to-purple-600',
+      color: 'from-purple-500 to-indigo-600',
       popular: true,
-      features: language === 'ru' ? [
-        'Безлимитная генерация',
-        'Публикация во все соцсети',
-        'Озвучка + видеоряд',
-        'Расширенная аналитика',
-        'Расписание публикаций',
-        'SEO и GEO оптимизация',
-        'Приоритетная поддержка',
-      ] : [
-        'Unlimited generation',
-        'Publish to all networks',
-        'Voiceover + video',
-        'Advanced analytics',
-        'Publishing schedule',
-        'SEO & GEO optimization',
-        'Priority support',
-      ],
+      desc: language === 'ru' ? 'Для серьёзных создателей' : 'For serious creators',
+      features: language === 'ru'
+        ? ['60 генераций в месяц', 'Публикация во все соцсети одновременно', 'Генерация видео и музыки', 'Полная аналитика + экспорт', 'Гео-таргетинг', 'Приоритетная поддержка']
+        : ['60 generations per month', 'Publish to all social networks simultaneously', 'Video and music generation', 'Full analytics + export', 'Geo targeting', 'Priority support'],
     },
     {
       id: 'premium',
-      name: t.premiumPlan,
-      price: 7990,
+      name: language === 'ru' ? 'Премиум' : 'Premium',
+      price: 9990,
       icon: Crown,
-      color: 'from-amber-500 to-orange-600',
-      features: language === 'ru' ? [
-        'Всё из Pro',
-        'Генерация музыки и песен',
-        'Видеомонтаж',
-        'API доступ',
-        'Белая метка',
-        'Персональный менеджер',
-        'Монетизация за блок',
-        'Рекламный кабинет',
-        'Приоритет модерации',
-      ] : [
-        'Everything in Pro',
-        'Music & song generation',
-        'Video editing',
-        'API access',
-        'White label',
-        'Personal manager',
-        'Per-block monetization',
-        'Advertiser dashboard',
-        'Priority moderation',
-      ],
+      color: 'from-amber-500 to-orange-500',
+      desc: language === 'ru' ? 'Максимум возможностей' : 'Maximum capabilities',
+      features: language === 'ru'
+        ? ['Безлимитные генерации', 'Публикация во все соцсети одновременно', 'API-доступ для интеграций', 'Персональный менеджер', 'White-label отчёты', 'Рекламный кабинет']
+        : ['Unlimited generations', 'Publish to all social networks simultaneously', 'API access for integrations', 'Personal manager', 'White-label reports', 'Ad cabinet'],
     },
   ];
 
+  const contentBlocks = [
+    { id: 'block-articles', name: language === 'ru' ? 'Публикация статей' : 'Article publishing', price: 1500, desc: language === 'ru' ? 'Генерация и публикация длинных статей с изображениями' : 'Generate and publish long articles with images', icon: '📝' },
+    { id: 'block-voice', name: language === 'ru' ? 'Генерация голоса' : 'Voice generation', price: 2000, desc: language === 'ru' ? 'Синтез речи для озвучки контента' : 'Speech synthesis for content voiceover', icon: '🎤' },
+    { id: 'block-video', name: language === 'ru' ? 'Генерация видео' : 'Video generation', price: 3500, desc: language === 'ru' ? 'Создание видеороликов из текста, смена фона' : 'Create videos from text, change background', icon: '🎬' },
+    { id: 'block-music', name: language === 'ru' ? 'Генерация музыки' : 'Music generation', price: 2500, desc: language === 'ru' ? 'Создание музыки и песен нейросетями' : 'Create music and songs with neural networks', icon: '🎵' },
+    { id: 'block-images', name: language === 'ru' ? 'Генерация изображений' : 'Image generation', price: 1800, desc: language === 'ru' ? 'Создание изображений по описанию' : 'Create images from description', icon: '🖼️' },
+    { id: 'block-seo', name: language === 'ru' ? 'SEO-оптимизация' : 'SEO optimization', price: 1200, desc: language === 'ru' ? 'Автоматическая SEO-оптимизация контента' : 'Automatic content SEO optimization', icon: '🔍' },
+    { id: 'block-analytics', name: language === 'ru' ? 'Расширенная аналитика' : 'Advanced analytics', price: 2200, desc: language === 'ru' ? 'Детальная аналитика и отчёты по всем соцсетям' : 'Detailed analytics and reports across all networks', icon: '📊' },
+    { id: 'block-schedule', name: language === 'ru' ? 'Автопубликация' : 'Auto-publishing', price: 1000, desc: language === 'ru' ? 'Публикация по расписанию во все соцсети' : 'Scheduled publishing to all networks', icon: '⏰' },
+  ];
+
+  const blocksTotal = selectedBlocks.reduce((sum, id) => {
+    const block = contentBlocks.find(b => b.id === id);
+    return sum + (block?.price || 0);
+  }, 0);
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
+      {/* Header */}
       <div className="text-center mb-12">
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">{t.subscriptions}</h1>
-        <p className="text-slate-600">{language === 'ru' ? 'Выберите подходящий тариф для вашего блога' : 'Choose the right plan for your blog'}</p>
+        <div className="inline-flex items-center gap-2 px-4 py-2 bg-purple-50 rounded-full text-purple-700 text-sm font-medium mb-4">
+          <Sparkles size={16} />
+          {language === 'ru' ? '48 часов бесплатно — без карты' : '48 hours free — no card required'}
+        </div>
+        <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-3">{t.subscriptions}</h1>
+        <p className="text-slate-600 max-w-xl mx-auto">
+          {language === 'ru'
+            ? 'Выберите тариф или соберите свой из отдельных блоков — платите только за то, что используете'
+            : 'Choose a plan or build your own from individual blocks — pay only for what you use'}
+        </p>
       </div>
 
-      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {plans.map(plan => (
-          <div key={plan.id} className={`bg-white rounded-2xl p-6 border ${plan.popular ? 'border-purple-300 shadow-lg shadow-purple-100 relative' : 'border-slate-100'}`}>
+      {/* ═══ TARIFF PLANS ═══ */}
+      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5 mb-16">
+        {plans.map((plan, i) => (
+          <div
+            key={plan.id}
+            className={`bg-white rounded-2xl border overflow-hidden transition-all duration-300 cursor-default relative ${plan.popular ? 'ring-2 ring-purple-500 shadow-lg shadow-purple-100' : 'border-slate-100'} ${hoveredPlan === i ? 'shadow-xl -translate-y-1' : ''}`}
+            onMouseEnter={() => setHoveredPlan(i)}
+            onMouseLeave={() => setHoveredPlan(null)}
+          >
             {plan.popular && (
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-gradient-to-r from-purple-500 to-blue-500 text-white text-xs font-medium rounded-full">
+              <div className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white text-center py-1.5 text-xs font-bold uppercase tracking-wider">
                 {language === 'ru' ? 'Популярный' : 'Popular'}
               </div>
             )}
-            <div className={`w-12 h-12 bg-gradient-to-br ${plan.color} rounded-xl flex items-center justify-center mb-4`}>
-              <plan.icon size={24} className="text-white" />
+            <div className="p-6">
+              <div className={`w-12 h-12 bg-gradient-to-br ${plan.color} rounded-xl flex items-center justify-center mb-4 shadow-lg`}>
+                <plan.icon size={24} className="text-white" />
+              </div>
+              <h3 className="font-bold text-lg text-slate-900">{plan.name}</h3>
+              <p className="text-slate-500 text-sm mt-1 mb-4">{plan.desc}</p>
+              <div className="flex items-baseline gap-1 mb-5">
+                <span className="text-3xl font-bold text-slate-900">{formatPrice(plan.price)}</span>
+                {plan.price > 0 && <span className="text-slate-500 text-sm">{t.perMonth}</span>}
+                {plan.price === 0 && <span className="text-slate-500 text-sm"> / {plan.period}</span>}
+              </div>
+              <button
+                onClick={() => currentUser ? setShowPayModal(true) : setCurrentPage('auth')}
+                className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${
+                  currentUser?.subscription === plan.id
+                    ? 'bg-slate-100 text-slate-500 cursor-default'
+                    : plan.popular
+                    ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white hover:shadow-lg hover:shadow-purple-200'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+                disabled={currentUser?.subscription === plan.id}
+              >
+                {currentUser?.subscription === plan.id ? t.currentPlan : t.subscribe}
+              </button>
+              <div className="mt-5 pt-5 border-t border-slate-100 space-y-2.5">
+                {plan.features.map((f, fi) => (
+                  <div key={fi} className="flex items-start gap-2">
+                    <Check size={15} className="text-green-500 mt-0.5 shrink-0" />
+                    <span className="text-sm text-slate-600">{f}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <h3 className="font-bold text-xl text-slate-900">{plan.name}</h3>
-            <div className="mt-2 mb-4">
-              <span className="text-3xl font-bold text-slate-900">{formatPrice(plan.price)}</span>
-              {plan.price > 0 && <span className="text-slate-500 text-sm">{t.perMonth}</span>}
-              {plan.price === 0 && <span className="text-slate-500 text-sm"> / {plan.period}</span>}
-            </div>
-            <ul className="space-y-2 mb-6">
-              {plan.features.map((feature, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
-                  <Check size={16} className="text-green-500 mt-0.5 shrink-0" />
-                  {feature}
-                </li>
-              ))}
-            </ul>
-            <button
-              className={`w-full py-3 rounded-xl font-medium transition-all ${
-                currentUser?.subscription === plan.id
-                  ? 'bg-slate-100 text-slate-500 cursor-default'
-                  : plan.popular
-                  ? 'bg-gradient-to-r from-purple-500 to-blue-600 text-white hover:shadow-lg'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-              disabled={currentUser?.subscription === plan.id}
-            >
-              {currentUser?.subscription === plan.id ? t.currentPlan : t.subscribe}
-            </button>
           </div>
         ))}
       </div>
 
-      {/* Payment Info */}
-      <div className="mt-12 bg-white rounded-xl p-6 border border-slate-100">
-        <h3 className="font-bold text-slate-900 mb-4">{language === 'ru' ? 'Способы оплаты' : 'Payment Methods'}</h3>
-        <div className="flex flex-wrap gap-4 items-center">
-          <div className="flex items-center gap-2 px-4 py-2 bg-yellow-50 rounded-lg border border-yellow-200">
-            <span className="font-bold text-yellow-700">Я</span>
-            <span className="text-sm text-yellow-700">{language === 'ru' ? 'Яндекс.Оплата' : 'Yandex.Pay'}</span>
+      {/* ═══ CONSTRUCTOR PROMO ═══ */}
+      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl p-8 border border-indigo-100 text-center mb-16">
+        <h2 className="text-xl md:text-2xl font-bold text-slate-900 mb-3">
+          {language === 'ru' ? 'Или соберите свой тариф в конструкторе' : 'Or build your own plan in the constructor'}
+        </h2>
+        <p className="text-slate-600 max-w-2xl mx-auto mb-6">
+          {language === 'ru'
+            ? 'Не хотите переплачивать за неиспользуемые функции? Выберите только те модули, которые вам нужны, и платите только за них.'
+            : "Don't want to pay for unused features? Choose only the modules you need and pay only for those."}
+        </p>
+
+        {/* Content Blocks */}
+        <div className="grid md:grid-cols-2 gap-3 max-w-4xl mx-auto mb-6">
+          {contentBlocks.map(block => {
+            const isSelected = selectedBlocks.includes(block.id);
+            return (
+              <div
+                key={block.id}
+                className={`rounded-xl border p-4 flex items-center gap-4 transition-all cursor-pointer ${isSelected ? 'border-blue-400 bg-blue-50/50 shadow-sm' : 'border-slate-200 bg-white hover:border-blue-200'}`}
+                onClick={() => setSelectedBlocks(prev => prev.includes(block.id) ? prev.filter(b => b !== block.id) : [...prev, block.id])}
+              >
+                <div className="text-3xl">{block.icon}</div>
+                <div className="flex-1 text-left">
+                  <h4 className="font-medium text-slate-900 text-sm">{block.name}</h4>
+                  <p className="text-xs text-slate-500 mt-0.5">{block.desc}</p>
+                  <p className="text-base font-bold text-slate-900 mt-1">{formatPrice(block.price)}<span className="text-xs text-slate-500 font-normal"> / {language === 'ru' ? 'мес' : 'mo'}</span></p>
+                </div>
+                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-slate-300'}`}>
+                  {isSelected && <Check size={14} className="text-white" />}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Selected blocks total */}
+        {selectedBlocks.length > 0 && (
+          <div className="inline-flex items-center gap-4 px-6 py-3 bg-blue-50 border border-blue-200 rounded-xl">
+            <span className="text-sm font-medium text-blue-900">
+              {language === 'ru' ? `Выбрано блоков: ${selectedBlocks.length}` : `Selected blocks: ${selectedBlocks.length}`}
+            </span>
+            <span className="text-lg font-bold text-blue-700">{formatPrice(blocksTotal)}<span className="text-xs font-normal">/{language === 'ru' ? 'мес' : 'mo'}</span></span>
+            <button
+              onClick={() => currentUser ? setShowPayModal(true) : setCurrentPage('auth')}
+              className="px-5 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition"
+            >
+              {language === 'ru' ? 'Оплатить' : 'Pay'}
+            </button>
           </div>
-          <div className="flex items-center gap-2 px-4 py-2 bg-purple-50 rounded-lg border border-purple-200">
-            <span className="text-sm text-purple-700">{language === 'ru' ? 'Банковская карта' : 'Bank Card'}</span>
-          </div>
-          <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg border border-blue-200">
-            <span className="text-sm text-blue-700">{language === 'ru' ? 'СБП' : 'SBP'}</span>
-          </div>
-          <div className="flex items-center gap-2 px-4 py-2 bg-green-50 rounded-lg border border-green-200">
-            <span className="text-sm text-green-700">{language === 'ru' ? 'ЮMoney' : 'YooMoney'}</span>
+        )}
+      </div>
+
+      {/* ═══ LEGAL DISCLAIMERS ═══ */}
+      <div className="space-y-2 mb-8">
+        <p className="text-xs text-slate-400 text-center">
+          {language === 'ru'
+            ? '* Бесплатный период 48 часов предоставляется один раз при регистрации. По окончании бесплатного периода подписка не активируется автоматически. Для continued использования необходимо выбрать и оплатить тарифный план.'
+            : '* Free 48-hour trial is provided once upon registration. After the trial period, subscription is not activated automatically.'}
+        </p>
+        <p className="text-xs text-slate-400 text-center">
+          {language === 'ru'
+            ? 'Цены указаны в российских рублях с учётом НДС. Оплата производится через сервис Яндекс.Оплата. Возврат средств осуществляется в соответствии с договором оферты.'
+            : 'Prices are in Russian rubles inclusive of VAT. Payment via Yandex.Pay.'}
+        </p>
+      </div>
+
+      {/* ═══ PAY MODAL ═══ */}
+      {showPayModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowPayModal(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-fade-in">
+            <button onClick={() => setShowPayModal(false)} className="absolute top-4 right-4 p-1 hover:bg-slate-100 rounded-lg">
+              <X size={18} className="text-slate-400" />
+            </button>
+            <div className="text-center">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <CreditCard size={32} className="text-green-600" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">{language === 'ru' ? 'Оплата через Яндекс.Оплата' : 'Payment via Yandex.Pay'}</h3>
+              <p className="text-slate-600 text-sm mb-4">{language === 'ru' ? 'Подтвердите оплату' : 'Confirm payment'}</p>
+              <div className="space-y-2 mb-4">
+                <button className="w-full p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-sm font-medium hover:bg-yellow-100 transition flex items-center gap-3">
+                  <span className="w-8 h-8 bg-yellow-400 rounded-lg flex items-center justify-center text-white font-bold">Я</span>
+                  {language === 'ru' ? 'Оплатить через Яндекс.Оплата' : 'Pay via Yandex.Pay'}
+                </button>
+                <button className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-100 transition flex items-center gap-3">
+                  <span className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center"><CreditCard size={16} className="text-purple-600" /></span>
+                  {language === 'ru' ? 'Банковской картой' : 'By bank card'}
+                </button>
+              </div>
+              <button onClick={() => setShowPayModal(false)} className="text-sm text-slate-500 hover:text-slate-700">{t.cancel}</button>
+            </div>
           </div>
         </div>
-        <p className="text-sm text-slate-500 mt-4">{language === 'ru' ? 'Оплата через платёжную систему Яндекс. Безопасно и быстро.' : 'Payment via Yandex payment system. Secure and fast.'}</p>
-      </div>
+      )}
     </div>
   );
 }

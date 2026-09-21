@@ -76,7 +76,7 @@ export default function SettingsPage() {
 
   // ===== PAYMENT =====
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([
-    { id: '1', type: 'yandex', name: language === 'ru' ? 'Яндекс.Оплата' : 'Yandex.Pay', details: 'ya.pay@blogpro.ru', isDefault: true, verified: true },
+    { id: '1', type: 'yandex', name: language === 'ru' ? 'Яндекс.Оплата' : 'Yandex.Pay', details: 'ya.pay@blogpost.ru', isDefault: true, verified: true },
     { id: '2', type: 'card', name: language === 'ru' ? 'Банковская карта' : 'Bank Card', details: '•••• •••• •••• 4242', isDefault: false, verified: true },
     { id: '3', type: 'yoomoney', name: 'ЮMoney', details: '4100••••••••1234', isDefault: false, verified: true },
   ]);

@@ -202,7 +202,7 @@ export default function AdminPage() {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">{language === 'ru' ? 'Название сайта' : 'Site name'}</label>
-              <input type="text" defaultValue="BlogPro" className="w-full p-3 border border-slate-200 rounded-lg" />
+              <input type="text" defaultValue="BlogPost" className="w-full p-3 border border-slate-200 rounded-lg" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">{language === 'ru' ? 'Описание' : 'Description'}</label>
