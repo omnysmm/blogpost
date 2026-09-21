@@ -261,10 +261,14 @@ export default function ContentGeneratorPage() {
     setSelectedNetworks(prev => prev.includes(id) ? prev.filter(n => n !== id) : [...prev, id]);
   };
 
+  const [publishStatus, setPublishStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   const handlePublish = async () => {
     if (!generatedContent || selectedNetworks.length === 0) return;
+    setPublishStatus(null);
 
     const successfulNetworks: string[] = [];
+    const errors: string[] = [];
 
     // Publish to each selected network
     for (const network of selectedNetworks) {
@@ -273,8 +277,7 @@ export default function ContentGeneratorPage() {
         if (result.success) {
           successfulNetworks.push('Telegram');
         } else {
-          console.warn('Telegram publish failed:', result.error);
-          alert(`Telegram: ${result.error}`);
+          errors.push(`Telegram: ${result.error}`);
         }
       } else {
         // Other networks: mark as published (integration pending)
@@ -282,8 +285,15 @@ export default function ContentGeneratorPage() {
       }
     }
 
+    // Show result
     if (successfulNetworks.length > 0) {
       setPublished(successfulNetworks);
+      setPublishStatus({
+        type: 'success',
+        text: language === 'ru'
+          ? `Опубликовано: ${successfulNetworks.join(', ')}`
+          : `Published to: ${successfulNetworks.join(', ')}`,
+      });
       // Update post status
       const latestPost = posts.find(p => p.content === generatedContent);
       if (latestPost) {
@@ -293,7 +303,14 @@ export default function ContentGeneratorPage() {
           publishedAt: new Date().toISOString(),
         });
       }
-      setTimeout(() => setPublished([]), 5000);
+      setTimeout(() => { setPublished([]); setPublishStatus(null); }, 5000);
+    }
+    if (errors.length > 0) {
+      setPublishStatus({
+        type: 'error',
+        text: errors.join('\n'),
+      });
+      setTimeout(() => setPublishStatus(null), 10000);
     }
   };
 
@@ -572,10 +589,11 @@ export default function ContentGeneratorPage() {
               className="w-full py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2">
               <Share2 size={18} /> {language === 'ru' ? 'Опубликовать сейчас' : 'Publish now'}
             </button>
-            {published.length > 0 && (
-              <div className="mt-3 p-3 bg-green-50 rounded-lg">
-                <p className="text-sm text-green-700 flex items-center gap-2">
-                  <Check size={16} /> {language === 'ru' ? `Опубликовано в: ${published.join(', ')}` : `Published to: ${published.join(', ')}`}
+            {publishStatus && (
+              <div className={`mt-3 p-3 rounded-lg ${publishStatus.type === 'success' ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                <p className={`text-sm flex items-start gap-2 ${publishStatus.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
+                  {publishStatus.type === 'success' ? <Check size={16} className="shrink-0 mt-0.5" /> : <AlertCircle size={16} className="shrink-0 mt-0.5" />}
+                  <span className="whitespace-pre-line">{publishStatus.text}</span>
                 </p>
               </div>
             )}
