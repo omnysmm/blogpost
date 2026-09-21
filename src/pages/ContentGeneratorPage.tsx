@@ -201,7 +201,10 @@ export default function ContentGeneratorPage() {
         views: 0,
         likes: 0,
       });
-    }, 2000);
+    } catch (error) {
+      console.error('Generation failed:', error);
+      setIsGenerating(false);
+    }
   };
 
   // Auto-generation functions
