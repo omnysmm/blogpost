@@ -336,13 +336,37 @@ export default function SettingsPage() {
                         />
                         <p className="text-xs text-slate-500 mt-1">{language === 'ru' ? 'ID канала, группы или пользователя для публикации' : 'Channel, group or user ID for publishing'}</p>
                       </div>
-                      <button
-                        onClick={() => setShowHelpFor('telegram')}
-                        className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 transition-colors"
-                      >
-                        <HelpCircle size={16} />
-                        {language === 'ru' ? 'Где найти API Key и Chat ID?' : 'Where to find API Key and Chat ID?'}
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={async () => {
+                            if (!social.apiKey || !social.accountId) {
+                              showSaveError(language === 'ru' ? 'Заполните API Key и Chat ID перед тестированием' : 'Fill in API Key and Chat ID before testing');
+                              return;
+                            }
+                            try {
+                              const { publishToTelegram } = await import('../services/telegram');
+                              const result = await publishToTelegram('BlogPost Test', language === 'ru' ? 'Тестовое сообщение от BlogPost! Если вы видите это — бот работает.' : 'Test message from BlogPost! If you see this — the bot is working.');
+                              if (result.success) {
+                                showSaveSuccess(language === 'ru' ? 'Тест отправлен! Проверьте Telegram.' : 'Test sent! Check Telegram.');
+                              } else {
+                                showSaveError(result.error || (language === 'ru' ? 'Ошибка подключения к Telegram' : 'Telegram connection error'));
+                              }
+                            } catch (e: any) {
+                              showSaveError(e.message);
+                            }
+                          }}
+                          className="px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition flex items-center gap-2"
+                        >
+                          <Zap size={14} /> {language === 'ru' ? 'Тест' : 'Test'}
+                        </button>
+                        <button
+                          onClick={() => setShowHelpFor('telegram')}
+                          className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 transition-colors"
+                        >
+                          <HelpCircle size={16} />
+                          {language === 'ru' ? 'Где найти API Key и Chat ID?' : 'Where to find API Key and Chat ID?'}
+                        </button>
+                      </div>
                     </>)}
                   </>)}
                   {social.method === 'manual' && (
