@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
 import { Wand2, FileText, Video, Music, Image, Mic, Film, Sparkles, Check, Loader2, Volume2, Globe, Shield, Clock, Calendar, Play, Pause, Trash2, Plus, Settings, Share2 } from 'lucide-react';
+import { generateText, generateImage, generateAudio, checkGenerationLimit } from '../services/ai';
 
 const aiModels = [
   { id: 'yandexgpt', name: 'YandexGPT', type: 'text', free: true },
@@ -106,37 +107,77 @@ export default function ContentGeneratorPage() {
     { id: 'music' as const, icon: Music, label: language === 'ru' ? 'Музыка' : 'Music' },
   ];
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!topic) return;
+
+    // Check generation limits
+    if (currentUser) {
+      const { allowed, remaining } = await checkGenerationLimit(currentUser.id, currentUser.subscription);
+      if (!allowed) {
+        alert(language === 'ru' ? 'Лимит генераций исчерпан. Обновите тариф.' : 'Generation limit reached. Upgrade your plan.');
+        return;
+      }
+    }
+
     setIsGenerating(true);
-    
-    // Simulate AI generation
-    setTimeout(() => {
+
+    try {
       let content = '';
-      switch (contentType) {
-        case 'post':
-          content = `📝 ${topic}\n\n${language === 'ru' ? `Сегодня мы поговорим о "${topic}". Это актуальная тема, которая интересует многих. В данном посте мы рассмотрим основные аспекты и поделимся полезной информацией.\n\n🔹 Первый важный момент — это понимание основ. Каждый начинающий должен знать, с чего начать.\n\n🔹 Второй аспект — это практика. Теория без практики не даст нужного результата.\n\n🔹 Третий момент — это постоянное обучение. Мир меняется, и мы должны меняться вместе с ним.\n\n💡 Вывод: "${topic}" — это то, что стоит изучить каждому. Подписывайтесь на обновления!` : `Today we'll talk about "${topic}". This is a relevant topic that interests many people.\n\n🔹 First important point — understanding the basics.\n🔹 Second aspect — practice.\n🔹 Third point — continuous learning.\n\n💡 Conclusion: "${topic}" is worth studying for everyone!`}`;
-          break;
-        case 'article':
-          content = `# ${topic}\n\n${language === 'ru' ? `## Введение\n\nВ данной статье мы подробно рассмотрим тему "${topic}". Это комплексный материал, который охватывает все ключевые аспекты.\n\n## Основная часть\n\n### 1. Исторический контекст\n\nТема "${topic}" имеет глубокие корни и богатую историю развития.\n\n### 2. Современное состояние\n\nНа сегодняшний день "${topic}" продолжает развиваться и приобретать новые формы.\n\n### 3. Перспективы развития\n\nЭксперты прогнозируют значительный рост в данной области.\n\n## Заключение\n\n"${topic}" — это динамично развивающаяся область, которая заслуживает внимания каждого.` : `# ${topic}\n\n## Introduction\n\nIn this article, we'll explore "${topic}" in detail.\n\n## Main Part\n\n### 1. Historical Context\n### 2. Current State\n### 3. Future Prospects\n\n## Conclusion\n\n"${topic}" is a dynamically developing field.`}`;
-          break;
-        case 'video':
-          content = `🎬 ${language === 'ru' ? 'Сценарий видео' : 'Video Script'}: "${topic}"\n\n${language === 'ru' ? `[00:00] Вступление — приветствие зрителей\n[00:30] Основная тема: ${topic}\n[02:00] Демонстрация примеров\n[04:00] Практические советы\n[06:00] Заключение и призыв к действию\n\n🎵 Фоновая музыка: мотивирующая\n🎤 Озвучка: ${selectedModel === 'auto' ? 'Silero TTS' : selectedModel}\n🎨 Визуальный стиль: современный, минималистичный` : `[00:00] Intro — greeting\n[00:30] Main topic: ${topic}\n[02:00] Examples demonstration\n[04:00] Practical tips\n[06:00] Conclusion and CTA`}`;
-          break;
-        case 'music':
-          content = `🎵 ${language === 'ru' ? 'Музыкальная композиция' : 'Music Track'}: "${topic}"\n\n${language === 'ru' ? `Жанр: Поп/Электроника\nТемп: 120 BPM\nНастроение: Энергичное, позитивное\nДлительность: 3:30\n\nСтруктура:\n- Интро (0:00-0:15)\n- Куплет 1 (0:15-0:45)\n- Припев (0:45-1:15)\n- Куплет 2 (1:15-1:45)\n- Припев (1:45-2:15)\n- Бридж (2:15-2:45)\n- Финал (2:45-3:30)\n\n🎤 Текст песни сгенерирован на тему "${topic}"` : `Genre: Pop/Electronic\nTempo: 120 BPM\nMood: Energetic, positive\nDuration: 3:30`}`;
-          break;
+
+      if (contentType === 'post' || contentType === 'article') {
+        content = await generateText({
+          prompt: language === 'ru'
+            ? `Напиши ${contentType === 'post' ? 'пост для соцсетей' : 'статью'} на тему: "${topic}". ${contentType === 'post' ? 'До 500 символов, с эмодзи и хештегами.' : 'Структурированная статья с заголовками, 1000-2000 символов.'}`
+            : `Write a ${contentType === 'post' ? 'social media post' : 'article'} about: "${topic}". ${contentType === 'post' ? 'Up to 500 characters, with emojis and hashtags.' : 'Structured article with headings, 1000-2000 characters.'}`,
+          language: language,
+          tone: 'creative',
+        });
+      } else if (contentType === 'video') {
+        content = `🎬 ${language === 'ru' ? 'Сценарий видео' : 'Video Script'}: "${topic}"\n\n`;
+        const script = await generateText({
+          prompt: language === 'ru'
+            ? `Напиши сценарий для видеоролика на тему: "${topic}". Укажи хронометраж, действия, диалоги.`
+            : `Write a video script about: "${topic}". Include timing, actions, dialogue.`,
+          language: language,
+        });
+        content += script;
+      } else if (contentType === 'music') {
+        content = `🎵 ${language === 'ru' ? 'Музыкальная композиция' : 'Music Track'}: "${topic}"\n\n`;
+        const lyrics = await generateText({
+          prompt: language === 'ru'
+            ? `Напиши текст песни на тему: "${topic}". Укажи структуру (куплет, припев).`
+            : `Write song lyrics about: "${topic}". Include structure (verse, chorus).`,
+          language: language,
+        });
+        content += lyrics;
       }
 
+      // Generate image if enabled
+      if (generateImage && content) {
+        try {
+          const imageUrl = await generateImage({
+            prompt: language === 'ru'
+              ? `Иллюстрация к посту: ${topic}`
+              : `Illustration for post: ${topic}`,
+          });
+          if (imageUrl) {
+            content = `![${topic}](${imageUrl})\n\n${content}`;
+          }
+        } catch (e) {
+          console.warn('Image generation failed:', e);
+        }
+      }
+
+      // Add ad block if enabled
       if (includeAd) {
         const adLabels: Record<string, string> = {
           'inline': language === 'ru' ? '📢 [Рекламный блок — в тексте]' : '📢 [Ad block — in text]',
           'bottom': language === 'ru' ? '📢 [Рекламный блок — внизу]' : '📢 [Ad block — bottom]',
           'top': language === 'ru' ? '📢 [Рекламный блок — в начале]' : '📢 [Ad block — top]',
-          'video-preroll': language === 'ru' ? '🎬 [PRE-ROLL реклама — встраивается ДО видео из рекламного кабинета]' : '🎬 [PRE-ROLL ad — inserted BEFORE video from ad cabinet]',
-          'video-midroll': language === 'ru' ? '🎬 [MID-ROLL реклама — встраивается В СЕРЕДИНУ видео из рекламного кабинета]' : '🎬 [MID-ROLL ad — inserted IN MIDDLE of video from ad cabinet]',
-          'video-postroll': language === 'ru' ? '🎬 [POST-ROLL реклама — встраивается ПОСЛЕ видео из рекламного кабинета]' : '🎬 [POST-ROLL ad — inserted AFTER video from ad cabinet]',
-          'video-overlay': language === 'ru' ? '🎬 [OVERLAY реклама — полупрозрачный баннер ПОВЕРХ видео]' : '🎬 [OVERLAY ad — semi-transparent banner OVER video]',
+          'video-preroll': language === 'ru' ? '🎬 [PRE-ROLL реклама]' : '🎬 [PRE-ROLL ad]',
+          'video-midroll': language === 'ru' ? '🎬 [MID-ROLL реклама]' : '🎬 [MID-ROLL ad]',
+          'video-postroll': language === 'ru' ? '🎬 [POST-ROLL реклама]' : '🎬 [POST-ROLL ad]',
+          'video-overlay': language === 'ru' ? '🎬 [OVERLAY реклама]' : '🎬 [OVERLAY ad]',
         };
         content += `\n\n---\n${adLabels[adPosition] || '📢 [Ad block]'}\n---`;
       }

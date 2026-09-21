@@ -1,10 +1,43 @@
+import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
 import { User, Mail, CreditCard, Clock, Shield, Settings, Megaphone } from 'lucide-react';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export default function ProfilePage() {
-  const { language, currentUser, setCurrentPage } = useStore();
+  const { language, currentUser, setCurrentPage, setCurrentUser } = useStore();
   const t = translations[language];
+  const [editName, setEditName] = useState(currentUser?.name || '');
+  const [editEmail, setEditEmail] = useState(currentUser?.email || '');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = async () => {
+    if (!currentUser || !editName || !editEmail) return;
+    setSaving(true);
+
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ name: editName, email: editEmail, updated_at: new Date().toISOString() })
+          .eq('id', currentUser.id);
+        if (!error) {
+          setCurrentUser({ ...currentUser, name: editName, email: editEmail });
+          setSaved(true);
+          setTimeout(() => setSaved(false), 3000);
+        }
+      } catch (e) {
+        console.error('Profile update failed:', e);
+      }
+    } else {
+      // Fallback: update local state
+      setCurrentUser({ ...currentUser, name: editName, email: editEmail });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    }
+    setSaving(false);
+  };
 
   if (!currentUser) return null;
 
@@ -119,16 +152,19 @@ export default function ProfilePage() {
         <div className="grid md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">{t.name}</label>
-            <input type="text" defaultValue={currentUser.name} className="w-full p-3 border border-slate-200 rounded-lg" />
+            <input type="text" value={editName} onChange={e => setEditName(e.target.value)} className="w-full p-3 border border-slate-200 rounded-lg" />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">{t.email}</label>
-            <input type="email" defaultValue={currentUser.email} className="w-full p-3 border border-slate-200 rounded-lg" />
+            <input type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} className="w-full p-3 border border-slate-200 rounded-lg" />
           </div>
         </div>
-        <button className="mt-4 px-6 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition">
-          {t.save}
-        </button>
+        <div className="mt-4 flex items-center gap-3">
+          <button onClick={handleSave} disabled={saving} className="px-6 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition disabled:opacity-50">
+            {saving ? (language === 'ru' ? 'Сохранение...' : 'Saving...') : t.save}
+          </button>
+          {saved && <span className="text-sm text-green-600">{language === 'ru' ? '✓ Сохранено' : '✓ Saved'}</span>}
+        </div>
       </div>
     </div>
   );
