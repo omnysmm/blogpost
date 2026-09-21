@@ -107,46 +107,70 @@ export async function getTelegramChatInfo(chatId: string, token?: string): Promi
   }
 }
 
+// ═══ Get Telegram config from localStorage ═══
+function getTelegramFromStorage(): { token: string; chatId: string } | null {
+  try {
+    const saved = localStorage.getItem('blogpost_socials');
+    if (!saved) return null;
+    const socials = JSON.parse(saved);
+    const tg = socials.find((s: any) => s.network === 'telegram' && s.connected && s.apiKey);
+    if (!tg) return null;
+    return { token: tg.apiKey, chatId: tg.accountId || '' };
+  } catch {
+    return null;
+  }
+}
+
 // ═══ Publish Post to Telegram ═══
 export async function publishToTelegram(
   title: string,
   content: string,
   imageUrl?: string
 ): Promise<TelegramPublishResult> {
-  if (!isSupabaseConfigured) {
-    return { success: false, error: 'Supabase not configured' };
+  let token = '';
+  let chatId = '';
+
+  // 1. Try localStorage first (user settings from SettingsPage)
+  const localConfig = getTelegramFromStorage();
+  if (localConfig && localConfig.token) {
+    token = localConfig.token;
+    chatId = localConfig.chatId;
   }
 
-  // Get chat_id from social_accounts
-  try {
-    const { data, error } = await supabase
-      .from('social_accounts')
-      .select('access_token, account_id, account_name')
-      .eq('network', 'telegram')
-      .eq('connected', true)
-      .single();
+  // 2. Fallback to Supabase
+  if (!token && isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('social_accounts')
+        .select('access_token, account_id, account_name')
+        .eq('network', 'telegram')
+        .eq('connected', true)
+        .single();
 
-    if (error || !data) {
-      return { success: false, error: 'Telegram not connected. Add bot token in Settings → Social Networks → Telegram.' };
+      if (!error && data) {
+        token = data.access_token || '';
+        chatId = data.account_id || data.account_name || '';
+      }
+    } catch (e) {
+      // ignore
     }
-
-    const chatId = data.account_id || data.account_name;
-    const token = data.access_token;
-
-    if (!chatId) {
-      return { success: false, error: 'No Telegram chat/channel ID configured. Set it in Settings.' };
-    }
-
-    // Format message
-    const formattedText = `<b>${escapeHtml(title)}</b>\n\n${escapeHtml(content).slice(0, 4000)}`;
-
-    if (imageUrl) {
-      return await sendTelegramPhoto(chatId, imageUrl, formattedText, token);
-    }
-    return await sendTelegramMessage(chatId, formattedText, token);
-  } catch (error: any) {
-    return { success: false, error: error.message };
   }
+
+  if (!token) {
+    return { success: false, error: 'Telegram не подключен. Добавьте токен бота в Настройки → Соцсети → Telegram.' };
+  }
+
+  if (!chatId) {
+    return { success: false, error: 'Не указан Chat ID. Заполните поле Chat ID / Канал в Настройки → Соцсети → Telegram.' };
+  }
+
+  // Format message
+  const formattedText = `<b>${escapeHtml(title)}</b>\n\n${escapeHtml(content).slice(0, 4000)}`;
+
+  if (imageUrl) {
+    return await sendTelegramPhoto(chatId, imageUrl, formattedText, token);
+  }
+  return await sendTelegramMessage(chatId, formattedText, token);
 }
 
 // ═══ Save Bot Token to Supabase ═══
