@@ -55,14 +55,29 @@ export default function SettingsPage() {
   };
 
   // ===== SOCIAL NETWORKS =====
-  const [socials, setSocials] = useState<SocialConnection[]>([
-    { id: '1', network: 'vk', name: 'VKontakte', emoji: '🔵', color: 'from-blue-500 to-blue-600', connected: true, method: 'api', apiKey: 'vk1.a••••••••', autoPublish: true },
-    { id: '2', network: 'telegram', name: 'Telegram', emoji: '📨', color: 'from-sky-500 to-sky-600', connected: true, method: 'api', apiKey: 'bot••••:••••', autoPublish: true },
+  const defaultSocials: SocialConnection[] = [
+    { id: '1', network: 'vk', name: 'VKontakte', emoji: '🔵', color: 'from-blue-500 to-blue-600', connected: false, method: null, autoPublish: false },
+    { id: '2', network: 'telegram', name: 'Telegram', emoji: '📨', color: 'from-sky-500 to-sky-600', connected: false, method: null, autoPublish: false },
     { id: '3', network: 'youtube', name: 'YouTube', emoji: '📺', color: 'from-red-500 to-red-600', connected: false, method: null, autoPublish: false },
-    { id: '4', network: 'instagram', name: 'Instagram', emoji: '📷', color: 'from-pink-500 to-purple-500', connected: true, method: 'manual', login: '@myblog', autoPublish: false },
+    { id: '4', network: 'instagram', name: 'Instagram', emoji: '📷', color: 'from-pink-500 to-purple-500', connected: false, method: null, autoPublish: false },
     { id: '5', network: 'tiktok', name: 'TikTok', emoji: '🎵', color: 'from-slate-800 to-slate-900', connected: false, method: null, autoPublish: false },
     { id: '6', network: 'ok', name: 'OK', emoji: '🟠', color: 'from-orange-500 to-orange-600', connected: false, method: null, autoPublish: false },
-  ]);
+  ];
+
+  const loadSocials = (): SocialConnection[] => {
+    try {
+      const saved = localStorage.getItem('blogpost_socials');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return defaultSocials;
+  };
+
+  const [socials, setSocials] = useState<SocialConnection[]>(loadSocials);
+
+  const saveSocials = (updated: SocialConnection[]) => {
+    setSocials(updated);
+    localStorage.setItem('blogpost_socials', JSON.stringify(updated));
+  };
   const [editingSocial, setEditingSocial] = useState<string | null>(null);
   const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({});
 
@@ -111,23 +126,23 @@ export default function SettingsPage() {
 
   // ===== SOCIAL HANDLERS =====
   const toggleConnect = (id: string) => {
-    setSocials(prev => prev.map(s => s.id === id ? { ...s, connected: !s.connected } : s));
+    saveSocials(socials.map(s => s.id === id ? { ...s, connected: !s.connected } : s));
   };
 
   const setSocialMethod = (id: string, method: 'api' | 'manual') => {
-    setSocials(prev => prev.map(s => s.id === id ? { ...s, method, connected: true } : s));
+    saveSocials(socials.map(s => s.id === id ? { ...s, method, connected: true } : s));
   };
 
   const updateApiKey = (id: string, apiKey: string) => {
-    setSocials(prev => prev.map(s => s.id === id ? { ...s, apiKey } : s));
+    saveSocials(socials.map(s => s.id === id ? { ...s, apiKey } : s));
   };
 
   const updateLogin = (id: string, login: string) => {
-    setSocials(prev => prev.map(s => s.id === id ? { ...s, login } : s));
+    saveSocials(socials.map(s => s.id === id ? { ...s, login } : s));
   };
 
   const toggleAutoPublish = (id: string) => {
-    setSocials(prev => prev.map(s => s.id === id ? { ...s, autoPublish: !s.autoPublish } : s));
+    saveSocials(socials.map(s => s.id === id ? { ...s, autoPublish: !s.autoPublish } : s));
   };
 
   // ===== SCHEDULE HANDLERS =====
@@ -291,7 +306,7 @@ export default function SettingsPage() {
                         <input
                           type="text"
                           value={social.accountId || ''}
-                          onChange={e => setSocials(prev => prev.map(s => s.id === social.id ? { ...s, accountId: e.target.value } : s))}
+                          onChange={e => saveSocials(socials.map(s => s.id === social.id ? { ...s, accountId: e.target.value } : s))}
                           className="w-full p-2.5 border border-slate-200 rounded-lg text-sm font-mono"
                           placeholder={language === 'ru' ? 'Например: @mychannel или -1001234567890' : 'e.g.: @mychannel or -1001234567890'}
                         />

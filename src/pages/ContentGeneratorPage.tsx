@@ -521,16 +521,22 @@ export default function ContentGeneratorPage() {
             </div>
             
             {generatedContent ? (
-              <div className="prose prose-sm max-w-none">
-                <pre className="whitespace-pre-wrap text-sm text-slate-700 bg-slate-50 p-4 rounded-lg font-sans leading-relaxed">
-                  {generatedContent}
-                </pre>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {generateAudio && <span className="px-3 py-1 bg-purple-50 text-purple-700 text-xs rounded-full">🎤 {language === 'ru' ? 'Озвучка готова' : 'Audio ready'}</span>}
-                  {generateVideo && <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs rounded-full">🎬 {language === 'ru' ? 'Видео готово' : 'Video ready'}</span>}
-                  {generateImage && <span className="px-3 py-1 bg-green-50 text-green-700 text-xs rounded-full">🖼️ {language === 'ru' ? 'Изображение готово' : 'Image ready'}</span>}
-                  {seoEnabled && <span className="px-3 py-1 bg-amber-50 text-amber-700 text-xs rounded-full">🔍 SEO</span>}
-                  {geoEnabled && <span className="px-3 py-1 bg-cyan-50 text-cyan-700 text-xs rounded-full">🌍 GEO</span>}
+              <div>
+                <textarea
+                  value={generatedContent}
+                  onChange={e => setGeneratedContent(e.target.value)}
+                  className="w-full min-h-[300px] p-4 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg font-sans leading-relaxed resize-y focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  placeholder={language === 'ru' ? 'Отредактируйте контент перед публикацией...' : 'Edit content before publishing...'}
+                />
+                <div className="mt-3 flex items-center justify-between">
+                  <div className="flex flex-wrap gap-2">
+                    {generateAudio && <span className="px-3 py-1 bg-purple-50 text-purple-700 text-xs rounded-full">🎤 {language === 'ru' ? 'Озвучка' : 'Audio'}</span>}
+                    {generateVideo && <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs rounded-full">🎬 {language === 'ru' ? 'Видео' : 'Video'}</span>}
+                    {generateImage && <span className="px-3 py-1 bg-green-50 text-green-700 text-xs rounded-full">🖼️ {language === 'ru' ? 'Изображение' : 'Image'}</span>}
+                    {seoEnabled && <span className="px-3 py-1 bg-amber-50 text-amber-700 text-xs rounded-full">🔍 SEO</span>}
+                    {geoEnabled && <span className="px-3 py-1 bg-cyan-50 text-cyan-700 text-xs rounded-full">🌍 GEO</span>}
+                  </div>
+                  <span className="text-xs text-slate-400">{generatedContent.length} {language === 'ru' ? 'символов' : 'chars'}</span>
                 </div>
               </div>
             ) : (
