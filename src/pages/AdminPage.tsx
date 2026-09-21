@@ -1,13 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore, UserRole, Subscription } from '../store/useStore';
 import { translations } from '../i18n/translations';
-import { Shield, Users, Settings, FileText, Eye, Ban, Check, Search } from 'lucide-react';
+import { Shield, Users, Settings, FileText, Eye, Ban, Check, Search, RefreshCw } from 'lucide-react';
 
 export default function AdminPage() {
-  const { language, currentUser } = useStore();
+  const { language, currentUser, platformStats, allUsers, loadPlatformStats, loadAllUsers } = useStore();
   const t = translations[language];
   const [activeTab, setActiveTab] = useState('users');
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    loadPlatformStats();
+    loadAllUsers();
+  }, []);
 
   const mockUsers = [
     { id: '1', name: 'Иван Петров', email: 'ivan@mail.ru', role: 'user' as UserRole, subscription: 'pro' as Subscription, registered: '2024-01-15', status: 'active' },
@@ -17,6 +22,10 @@ export default function AdminPage() {
     { id: '5', name: 'Дмитрий Новиков', email: 'dmitry@bk.ru', role: 'user' as UserRole, subscription: 'pro' as Subscription, registered: '2024-02-10', status: 'active' },
   ];
 
+  const displayUsers = allUsers.length > 0
+    ? allUsers.map((u: any) => ({ ...u, registered: u.created_at?.split('T')[0] || '', status: u.role === 'banned' ? 'banned' : 'active' }))
+    : mockUsers;
+
   const mockContent = [
     { id: '1', title: 'Как начать блог', author: 'Иван Петров', status: 'approved', date: '2024-03-15' },
     { id: '2', title: 'Топ-10 тем для YouTube', author: 'Мария Сидорова', status: 'pending', date: '2024-03-16' },
@@ -24,7 +33,7 @@ export default function AdminPage() {
     { id: '4', title: 'Запрещённый контент', author: 'Елена Волкова', status: 'rejected', date: '2024-03-16' },
   ];
 
-  const filteredUsers = mockUsers.filter(u => u.name.toLowerCase().includes(searchQuery.toLowerCase()) || u.email.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredUsers = displayUsers.filter(u => u.name.toLowerCase().includes(searchQuery.toLowerCase()) || u.email.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const tabs = [
     { id: 'users', icon: Users, label: t.users },
@@ -47,19 +56,19 @@ export default function AdminPage() {
       {/* Admin Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="bg-white rounded-xl p-4 border border-slate-100">
-          <p className="text-2xl font-bold text-slate-900">1,247</p>
+          <p className="text-2xl font-bold text-slate-900">{platformStats.users.toLocaleString()}</p>
           <p className="text-sm text-slate-500">{language === 'ru' ? 'Пользователей' : 'Users'}</p>
         </div>
         <div className="bg-white rounded-xl p-4 border border-slate-100">
-          <p className="text-2xl font-bold text-slate-900">8,934</p>
+          <p className="text-2xl font-bold text-slate-900">{platformStats.posts.toLocaleString()}</p>
           <p className="text-sm text-slate-500">{language === 'ru' ? 'Постов создано' : 'Posts created'}</p>
         </div>
         <div className="bg-white rounded-xl p-4 border border-slate-100">
-          <p className="text-2xl font-bold text-green-600">₽ 456,000</p>
+          <p className="text-2xl font-bold text-green-600">₽ {platformStats.revenue.toLocaleString()}</p>
           <p className="text-sm text-slate-500">{language === 'ru' ? 'Доход за месяц' : 'Monthly revenue'}</p>
         </div>
         <div className="bg-white rounded-xl p-4 border border-slate-100">
-          <p className="text-2xl font-bold text-slate-900">23</p>
+          <p className="text-2xl font-bold text-slate-900">{platformStats.pending}</p>
           <p className="text-sm text-slate-500">{language === 'ru' ? 'На модерации' : 'Pending moderation'}</p>
         </div>
       </div>

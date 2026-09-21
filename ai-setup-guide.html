@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>BlogPost — Настройка AI</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background: #f5f5f5; }
+    .step { background: white; border-radius: 8px; padding: 20px; margin: 16px 0; border-left: 4px solid #6366f1; }
+    .step-num { color: #6366f1; font-weight: bold; font-size: 20px; }
+    .cmd { background: #1e1b4b; color: #a78bfa; padding: 12px 16px; border-radius: 8px; font-family: monospace; font-size: 13px; margin: 8px 0; cursor: pointer; }
+    .cmd:hover { background: #312e81; }
+    .key { background: white; border: 2px solid #10b981; border-radius: 8px; padding: 16px; margin: 12px 0; }
+    .label { font-weight: bold; color: #10b981; }
+    .value { font-family: monospace; font-size: 13px; word-break: break-all; background: #f0fff4; padding: 8px; border-radius: 4px; cursor: pointer; }
+    .value:hover { background: #d1fae5; }
+    h1 { color: #1e293b; }
+    h2 { color: #6366f1; }
+    .note { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px; margin: 12px 0; }
+    .link { color: #6366f1; }
+    #toast { display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#10b981; color:white; padding:12px 24px; border-radius:8px; font-weight:bold; }
+  </style>
+</head>
+<body>
+  <h1>BlogPost — Настройка AI-провайдеров</h1>
+  <p>Пошаговая инструкция для подключения реальных нейросетей.</p>
+
+  <h2>Шаг 1: Получите Supabase Access Token</h2>
+  <div class="step">
+    <span class="step-num">1.</span> Откройте <a class="link" href="https://supabase.com/dashboard/account/tokens" target="_blank">Supabase Dashboard → Tokens</a>
+    <br><br>
+    <span class="step-num">2.</span> Нажмите <b>"Generate new token"</b>, дайте имя "BlogPost CLI"
+    <br><br>
+    <span class="step-num">3.</span> Скопируйте токен — он понадобится ниже
+  </div>
+
+  <h2>Шаг 2: Получите YandexGPT API Key</h2>
+  <div class="step">
+    <span class="step-num">1.</span> Откройте <a class="link" href="https://console.cloud.yandex.ru/" target="_blank">Yandex Cloud Console</a>
+    <br><br>
+    <span class="step-num">2.</span> Создайте облако (если нет) → перейдите в него
+    <br><br>
+    <span class="step-num">3.</span> Найдите <b>FOLDER_ID</b> — он на главной странице облака (строка вида <code>b1gxxxxxxxxxxxxxxxxx</code>)
+    <br><br>
+    <span class="step-num">4.</span> Слева → <b>"Сервисные аккаунты"</b> → создайте аккаунт → добавьте роль <b>"ai.editor"</b>
+    <br><br>
+    <span class="step-num">5.</span> На странице сервисного аккаунта → <b>"Создать новый API-ключ"</b> → скопируйте <b>API Key</b>
+  </div>
+
+  <h2>Шаг 3: Запустите команды в терминале</h2>
+  <div class="note">
+    Откройте терминал (PowerShell) в папке проекта и выполните команды по очереди. Замените значения в кавычках на ваши.
+  </div>
+
+  <div class="step">
+    <b>3.1 Войдите в Supabase:</b>
+    <div class="cmd" onclick="copy(this)">npx supabase login --token ВАШ_SUPABASE_TOKEN</div>
+  </div>
+
+  <div class="step">
+    <b>3.2 Установите секреты для Edge Functions:</b>
+    <div class="cmd" onclick="copy(this)">npx supabase secrets set --project-ref udfqkkeupibrhighbizj YANDEX_GPT_API_KEY=ВАШ_YANDEX_API_KEY YANDEX_FOLDER_ID=ВАШ_FOLDER_ID</div>
+  </div>
+
+  <div class="step">
+    <b>3.3 (Опционально) Для генерации изображений через FusionBrain:</b>
+    <div class="cmd" onclick="copy(this)">npx supabase secrets set --project-ref udfqkkeupibrhighbizj FUSIONBRAIN_API_KEY=ВАШ_КЛЮЧ FUSIONBRAIN_API_SECRET=ВАШ_СЕКРЕТ</div>
+    <p style="font-size:13px;color:#666;">Ключи FusionBrain: <a class="link" href="https://fusionbrain.ai/keys/" target="_blank">fusionbrain.ai/keys</a></p>
+  </div>
+
+  <div class="step">
+    <b>3.4 Деплой Edge Functions:</b>
+    <div class="cmd" onclick="copy(this)">npx supabase functions deploy --project-ref udfqkkeupibrhighbizj</div>
+  </div>
+
+  <h2>Готово!</h2>
+  <div class="step" style="border-left-color: #10b981;">
+    После выполнения команд AI-генерация на сайте будет работать через реальные нейросети YandexGPT.
+    <br><br>
+    <b>Проверьте:</b> откройте <a class="link" href="https://blogpost-chi-gilt.vercel.app" target="_blank">blogpost-chi-gilt.vercel.app</a> → Войдите → Генерация контента → введите тему → "Сгенерировать"
+  </div>
+
+  <div id="toast">Скопировано!</div>
+  <script>
+    function copy(el) {
+      navigator.clipboard.writeText(el.textContent).then(() => {
+        const t = document.getElementById('toast');
+        t.style.display = 'block';
+        setTimeout(() => t.style.display = 'none', 1500);
+      });
+    }
+  </script>
+</body>
+</html>

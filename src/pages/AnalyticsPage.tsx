@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
 import {
@@ -15,11 +15,15 @@ import {
 } from 'recharts';
 
 export default function AnalyticsPage() {
-  const { language, analytics } = useStore();
+  const { language, analytics, loadAnalytics, exportAnalyticsCSV } = useStore();
   const t = translations[language];
   const [selectedNetwork, setSelectedNetwork] = useState('all');
   const [period, setPeriod] = useState('30');
   const [activeChart, setActiveChart] = useState<'views' | 'engagement' | 'growth'>('views');
+
+  useEffect(() => {
+    loadAnalytics(parseInt(period));
+  }, [period]);
 
   const networks = ['all', 'vk', 'telegram', 'youtube', 'instagram', 'tiktok', 'ok'];
   const networkNames: Record<string, string> = { all: language === 'ru' ? 'Все' : 'All', vk: 'VKontakte', telegram: 'Telegram', youtube: 'YouTube', instagram: 'Instagram', tiktok: 'TikTok', ok: 'OK' };

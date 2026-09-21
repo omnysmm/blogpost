@@ -6,9 +6,25 @@ import { Check, Star, Zap, Crown, CreditCard, ArrowRight, X, Sparkles } from 'lu
 export default function SubscriptionsPage() {
   const { language, currency, currentUser, setCurrentPage } = useStore();
   const t = translations[language];
+  const { applyPromo } = useStore();
   const [hoveredPlan, setHoveredPlan] = useState<number | null>(null);
   const [selectedBlocks, setSelectedBlocks] = useState<string[]>([]);
   const [showPayModal, setShowPayModal] = useState(false);
+  const [promoCode, setPromoCode] = useState('');
+  const [promoResult, setPromoResult] = useState<{ valid: boolean; discount: number; type: string } | null>(null);
+  const [promoError, setPromoError] = useState('');
+
+  const handleApplyPromo = async () => {
+    if (!promoCode) return;
+    setPromoError('');
+    const result = await applyPromo(promoCode);
+    if (result && result.valid) {
+      setPromoResult(result);
+    } else {
+      setPromoError(language === 'ru' ? 'Промокод не найден или истёк' : 'Promo code not found or expired');
+      setPromoResult(null);
+    }
+  };
 
   const formatPrice = (price: number) => {
     if (currency === 'USD') return `$${Math.round(price / 90)}`;
@@ -198,6 +214,31 @@ export default function SubscriptionsPage() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* ═══ PROMO CODE ═══ */}
+      <div className="mb-8 max-w-md mx-auto">
+        <div className="bg-white rounded-xl border border-slate-100 p-5">
+          <h3 className="font-bold text-slate-900 mb-3 text-center">{language === 'ru' ? 'Есть промокод?' : 'Have a promo code?'}</h3>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={promoCode}
+              onChange={e => { setPromoCode(e.target.value.toUpperCase()); setPromoError(''); setPromoResult(null); }}
+              placeholder={language === 'ru' ? 'Введите промокод' : 'Enter promo code'}
+              className="flex-1 p-3 border border-slate-200 rounded-lg text-sm"
+            />
+            <button onClick={handleApplyPromo} className="px-5 py-3 bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-600 transition">
+              {language === 'ru' ? 'Применить' : 'Apply'}
+            </button>
+          </div>
+          {promoResult && promoResult.valid && (
+            <p className="mt-2 text-sm text-green-600 font-medium">
+              {language === 'ru' ? `✓ Скидка ${promoResult.discount}${promoResult.type === 'percent' ? '%' : ' ₽'} применена!` : `✓ Discount ${promoResult.discount}${promoResult.type === 'percent' ? '%' : ' ₽'} applied!`}
+            </p>
+          )}
+          {promoError && <p className="mt-2 text-sm text-red-500">{promoError}</p>}
+        </div>
       </div>
 
       {/* ═══ LEGAL DISCLAIMERS ═══ */}

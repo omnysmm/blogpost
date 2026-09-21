@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { generateText, generateImage, generateAudio, checkGenerationLimit } from '../services/ai';
+import { fetchPosts, createPost, updatePost as crudUpdatePost, deletePost as crudDeletePost, fetchAnalytics as crudFetchAnalytics, insertAnalytics, fetchPlatformStats, fetchAllUsers, validatePromoCode, exportToCSV } from '../services/crud';
 import type { Language, Currency, Subscription, UserRole, User, Post, AdBlock, Analytics } from './types';
 
 export type { Language, Currency, Subscription, UserRole, User, Post, AdBlock, Analytics };
@@ -29,6 +30,14 @@ interface AppState {
   register: (name: string, email: string, password: string) => Promise<boolean>;
   logout: () => void;
   generateAIContent: (prompt: string, type: string) => Promise<string>;
+  loadPosts: () => Promise<void>;
+  loadAnalytics: (days?: number) => Promise<void>;
+  loadPlatformStats: () => Promise<void>;
+  loadAllUsers: () => Promise<void>;
+  applyPromo: (code: string) => Promise<{ valid: boolean; discount: number; type: string } | null>;
+  exportAnalyticsCSV: () => void;
+  platformStats: { users: number; posts: number; revenue: number; pending: number };
+  allUsers: any[];
 }
 
 // ═══ Mock Data ═══
@@ -79,6 +88,8 @@ export const useStore = create<AppState>((set, get) => ({
   analytics: defaultAnalytics,
   isSidebarOpen: false,
   currentPage: getInitialPage(),
+  platformStats: { users: 0, posts: 0, revenue: 0, pending: 0 },
+  allUsers: [],
 
   setLanguage: (lang) => set({ language: lang, currency: lang === 'zh' ? 'CNY' : 'RUB' }),
   setCurrency: (curr) => set({ currency: curr }),
@@ -210,5 +221,49 @@ export const useStore = create<AppState>((set, get) => ({
       default:
         return await generateText({ prompt, language: get().language });
     }
+  },
+
+  // ═══ Load Posts from Supabase ═══
+  loadPosts: async () => {
+    const user = get().currentUser;
+    if (!user || !isSupabaseConfigured) return;
+    const posts = await fetchPosts(user.id);
+    set({ posts: posts as Post[] });
+  },
+
+  // ═══ Load Analytics from Supabase ═══
+  loadAnalytics: async (days = 30) => {
+    const user = get().currentUser;
+    if (!user || !isSupabaseConfigured) return;
+    const data = await crudFetchAnalytics(user.id, days);
+    if (data.length > 0) {
+      set({ analytics: data as Analytics[] });
+    }
+    // If empty, keep mock data
+  },
+
+  // ═══ Load Platform Stats (Admin) ═══
+  loadPlatformStats: async () => {
+    if (!isSupabaseConfigured) return;
+    const stats = await fetchPlatformStats();
+    set({ platformStats: stats });
+  },
+
+  // ═══ Load All Users (Admin) ═══
+  loadAllUsers: async () => {
+    if (!isSupabaseConfigured) return;
+    const users = await fetchAllUsers();
+    set({ allUsers: users });
+  },
+
+  // ═══ Apply Promo Code ═══
+  applyPromo: async (code) => {
+    return await validatePromoCode(code);
+  },
+
+  // ═══ Export Analytics CSV ═══
+  exportAnalyticsCSV: () => {
+    const analytics = get().analytics;
+    exportToCSV(analytics, `blogpost-analytics-${new Date().toISOString().split('T')[0]}`);
   },
 }));
