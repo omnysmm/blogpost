@@ -30,7 +30,7 @@ export default function Header() {
                 {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
               </button>
             )}
-            <div className="flex items-center gap-2 cursor-pointer" onClick={() => setCurrentPage(currentUser ? 'dashboard' : 'home')}>
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => setCurrentPage('home')}>
               <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
                 <span className="text-white font-bold text-sm">B</span>
               </div>
@@ -73,6 +73,11 @@ export default function Header() {
 
             {currentUser ? (
               <div className="flex items-center gap-2">
+                {currentPage === 'home' && (
+                  <button onClick={() => setCurrentPage('dashboard')} className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg text-sm font-medium hover:shadow-lg transition-all">
+                    {language === 'ru' ? 'В кабинет' : 'Dashboard'}
+                  </button>
+                )}
                 <button onClick={() => setCurrentPage('settings')} className="p-2 rounded-lg hover:bg-slate-100" title={t.settings}>
                   <Settings size={18} className="text-slate-600" />
                 </button>

@@ -76,6 +76,8 @@ function saveLocalUsers(users: any[]) {
 function getInitialPage(): string {
   const hash = window.location.hash.replace('#/', '');
   if (hash.startsWith('legal/')) return hash;
+  const saved = localStorage.getItem('blogpost_page');
+  if (saved) return saved;
   return 'home';
 }
 
@@ -94,7 +96,10 @@ export const useStore = create<AppState>((set, get) => ({
   setLanguage: (lang) => set({ language: lang, currency: lang === 'zh' ? 'CNY' : 'RUB' }),
   setCurrency: (curr) => set({ currency: curr }),
   setCurrentUser: (user) => set({ currentUser: user }),
-  setCurrentPage: (page) => set({ currentPage: page }),
+  setCurrentPage: (page) => {
+    localStorage.setItem('blogpost_page', page);
+    set({ currentPage: page });
+  },
   toggleSidebar: () => set({ isSidebarOpen: !get().isSidebarOpen }),
 
   addPost: (post) => set({ posts: [...get().posts, post] }),
@@ -199,6 +204,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (isSupabaseConfigured) {
       await supabase.auth.signOut();
     }
+    localStorage.removeItem('blogpost_page');
     set({ currentUser: null, currentPage: 'home' });
   },
 
