@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
-import { Wand2, FileText, Video, Music, Image, Mic, Film, Sparkles, Check, Loader2, Volume2, Globe, Shield, Clock, Calendar, Play, Pause, Trash2, Plus, Settings, Share2 } from 'lucide-react';
+import { Wand2, FileText, Video, Music, Image, Mic, Film, Sparkles, Check, Loader2, Volume2, Globe, Shield, Clock, Calendar, Play, Pause, Trash2, Plus, Settings, Share2, AlertCircle } from 'lucide-react';
 import { generateText, generateImage, generateAudio, checkGenerationLimit } from '../services/ai';
 import { publishToTelegram } from '../services/telegram';
 
@@ -271,45 +271,51 @@ export default function ContentGeneratorPage() {
 
     // Publish to each selected network
     for (const network of selectedNetworks) {
-      if (network === 'telegram') {
-        const result = await publishToTelegram(topic || 'BlogPost', generatedContent);
-        if (result.success) {
-          successfulNetworks.push('Telegram');
+      try {
+        if (network === 'telegram') {
+          const result = await publishToTelegram(topic || 'BlogPost', generatedContent);
+          if (result.success) {
+            successfulNetworks.push('Telegram');
+          } else {
+            errors.push(`Telegram: ${result.error}`);
+          }
         } else {
-          errors.push(`Telegram: ${result.error}`);
+          successfulNetworks.push(network.charAt(0).toUpperCase() + network.slice(1));
         }
-      } else {
-        // Other networks: mark as published (integration pending)
-        successfulNetworks.push(network.charAt(0).toUpperCase() + network.slice(1));
+      } catch (err: any) {
+        errors.push(`${network}: ${err.message || 'Неизвестная ошибка'}`);
       }
     }
 
     // Show result
-    if (successfulNetworks.length > 0) {
-      setPublished(successfulNetworks);
-      setPublishStatus({
-        type: 'success',
-        text: language === 'ru'
-          ? `Опубликовано: ${successfulNetworks.join(', ')}`
-          : `Published to: ${successfulNetworks.join(', ')}`,
-      });
-      // Update post status
-      const latestPost = posts.find(p => p.content === generatedContent);
-      if (latestPost) {
-        updatePost(latestPost.id, {
-          status: 'published',
-          socialNetworks: selectedNetworks,
-          publishedAt: new Date().toISOString(),
+    try {
+      if (successfulNetworks.length > 0) {
+        setPublished(successfulNetworks);
+        setPublishStatus({
+          type: 'success',
+          text: language === 'ru'
+            ? `Опубликовано: ${successfulNetworks.join(', ')}`
+            : `Published to: ${successfulNetworks.join(', ')}`,
         });
+        const latestPost = posts.find(p => p.content === generatedContent);
+        if (latestPost) {
+          updatePost(latestPost.id, {
+            status: 'published',
+            socialNetworks: selectedNetworks,
+            publishedAt: new Date().toISOString(),
+          });
+        }
+        setTimeout(() => { setPublished([]); setPublishStatus(null); }, 5000);
       }
-      setTimeout(() => { setPublished([]); setPublishStatus(null); }, 5000);
-    }
-    if (errors.length > 0) {
-      setPublishStatus({
-        type: 'error',
-        text: errors.join('\n'),
-      });
-      setTimeout(() => setPublishStatus(null), 10000);
+      if (errors.length > 0) {
+        setPublishStatus({
+          type: 'error',
+          text: errors.join('\n'),
+        });
+        setTimeout(() => setPublishStatus(null), 10000);
+      }
+    } catch (err: any) {
+      setPublishStatus({ type: 'error', text: `Ошибка: ${err.message}` });
     }
   };
 
