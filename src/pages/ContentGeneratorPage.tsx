@@ -60,6 +60,7 @@ export default function ContentGeneratorPage() {
   const [published, setPublished] = useState<string[]>([]);
   const [includeAd, setIncludeAd] = useState(false);
   const [adPosition, setAdPosition] = useState('inline');
+  const [publishStatus, setPublishStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Auto-generation state
   const [autoTasks, setAutoTasks] = useState<AutoTask[]>([
@@ -260,8 +261,6 @@ export default function ContentGeneratorPage() {
   const toggleNetwork = (id: string) => {
     setSelectedNetworks(prev => prev.includes(id) ? prev.filter(n => n !== id) : [...prev, id]);
   };
-
-  const [publishStatus, setPublishStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const handlePublish = async () => {
     if (!generatedContent || selectedNetworks.length === 0) return;

@@ -1,4 +1,5 @@
 import { useStore } from './store/useStore';
+import useInactivityLogout from './components/useInactivityLogout';
 import Header from './components/Header';
 import HomePage from './pages/HomePage';
 import DashboardPage from './pages/DashboardPage';
@@ -17,6 +18,7 @@ import LegalPage from './pages/LegalPage';
 
 function App() {
   const { currentPage, currentUser } = useStore();
+  useInactivityLogout();
 
   const renderPage = () => {
     switch (currentPage) {
