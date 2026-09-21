@@ -363,9 +363,39 @@ export default function SettingsPage() {
                   </label>
                   <button
                     onClick={() => {
+                      // Validate required fields
+                      if (social.method === 'api') {
+                        if (!social.apiKey || social.apiKey.trim() === '') {
+                          showSaveError(
+                            language === 'ru'
+                              ? `Заполните API Key для ${social.name}. Нажмите «Где найти API Key и Chat ID?» для инструкции.`
+                              : `Fill in API Key for ${social.name}. Click 'Where to find API Key and Chat ID?' for instructions.`
+                          );
+                          return;
+                        }
+                        if (social.network === 'telegram' && (!social.accountId || social.accountId.trim() === '')) {
+                          showSaveError(
+                            language === 'ru'
+                              ? 'Заполните Chat ID для Telegram. Нажмите «Где найти API Key и Chat ID?» для инструкции.'
+                              : 'Fill in Chat ID for Telegram. Click "Where to find API Key and Chat ID?" for instructions.'
+                          );
+                          return;
+                        }
+                      }
+                      if (social.method === 'manual') {
+                        if (!social.login || social.login.trim() === '') {
+                          showSaveError(
+                            language === 'ru'
+                              ? `Заполните логин/имя аккаунта для ${social.name}.`
+                              : `Fill in login/account name for ${social.name}.`
+                          );
+                          return;
+                        }
+                      }
                       try {
                         saveSocials(socials);
-                        showSaveSuccess(language === 'ru' ? 'Настройки соцсетей сохранены' : 'Social network settings saved');
+                        showSaveSuccess(language === 'ru' ? `Настройки ${social.name} сохранены` : `${social.name} settings saved`);
+                        setEditingSocial(null);
                       } catch (e: any) {
                         showSaveError(language === 'ru' ? `Ошибка сохранения: ${e.message}` : `Save error: ${e.message}`);
                       }
