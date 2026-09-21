@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
-import { FileText, Video, Music, Image, Eye, Heart, Share2, Clock, TrendingUp, Megaphone, BarChart3, Zap, MessageSquare, ArrowUp, Users, Target, Award, Calendar } from 'lucide-react';
+import { FileText, Video, Music, Image, Eye, Heart, Share2, Clock, TrendingUp, Megaphone, BarChart3, Zap, MessageSquare, ArrowUp, Users, Target, Award, Calendar, Lightbulb, Sparkles, CheckCircle2 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar, Legend, LineChart, Line,
@@ -302,6 +302,159 @@ export default function DashboardPage() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Network Table */}
+      <div className="bg-white rounded-xl border border-slate-100 overflow-hidden mb-6">
+        <div className="p-5 border-b border-slate-100">
+          <h3 className="font-bold text-slate-900">{language === 'ru' ? 'Детальная статистика по сетям' : 'Detailed network statistics'}</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="text-left p-4 text-sm font-medium text-slate-600">{language === 'ru' ? 'Соцсеть' : 'Network'}</th>
+                <th className="text-left p-4 text-sm font-medium text-slate-600">{t.views}</th>
+                <th className="text-left p-4 text-sm font-medium text-slate-600">{t.likes}</th>
+                <th className="text-left p-4 text-sm font-medium text-slate-600">{t.shares}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {networkStats.map((stat, i) => (
+                <tr key={i} className="border-t border-slate-50 hover:bg-slate-50">
+                  <td className="p-4 font-medium text-slate-900">{stat.network}</td>
+                  <td className="p-4 text-slate-600">{stat.views.toLocaleString()}</td>
+                  <td className="p-4 text-slate-600">{stat.likes.toLocaleString()}</td>
+                  <td className="p-4 text-slate-600">{stat.shares.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Recommendations */}
+      {(() => {
+        const recommendations = [
+          { id: '1', priority: 'high', icon: Video, title: language === 'ru' ? 'Увеличьте видеоконтент' : 'Increase video content', description: language === 'ru' ? 'Видео получает в 3.2 раза больше просмотров. Публикуйте минимум 2 видео в неделю.' : 'Videos get 3.2x more views. Publish at least 2 videos per week.', impact: '+45% ' + (language === 'ru' ? 'просмотров' : 'views') },
+          { id: '2', priority: 'high', icon: Target, title: language === 'ru' ? 'Оптимизируйте SEO-теги' : 'Optimize SEO tags', description: language === 'ru' ? 'SEO-скор 72/100. Добавьте ключевые слова в заголовки и описания.' : 'SEO score 72/100. Add keywords to titles and descriptions.', impact: '+28% ' + (language === 'ru' ? 'охвата' : 'reach') },
+          { id: '3', priority: 'medium', icon: Clock, title: language === 'ru' ? 'Публикуйте в пиковые часы' : 'Publish at peak hours', description: language === 'ru' ? 'Аудитория активна 12:00–14:00 и 19:00–22:00. Планируйте публикации.' : 'Audience active 12:00–14:00 and 19:00–22:00. Schedule posts.', impact: '+35% ' + (language === 'ru' ? 'вовлечения' : 'engagement') },
+          { id: '4', priority: 'medium', icon: Users, title: language === 'ru' ? 'Расширьте GEO-таргетинг' : 'Expand GEO targeting', description: language === 'ru' ? 'GEO-показатель 68/100. Добавьте региональные хештеги.' : 'GEO score 68/100. Add regional hashtags.', impact: '+22% ' + (language === 'ru' ? 'подписчиков' : 'followers') },
+          { id: '5', priority: 'medium', icon: FileText, title: language === 'ru' ? 'Используйте длинные статьи' : 'Use long-form articles', description: language === 'ru' ? 'Статьи от 1500 слов получают в 2.5 раза больше репостов.' : 'Articles over 1500 words get 2.5x more shares.', impact: '+30% ' + (language === 'ru' ? 'репостов' : 'shares') },
+          { id: '6', priority: 'low', icon: MessageSquare, title: language === 'ru' ? 'Увеличьте взаимодействие' : 'Increase interaction', description: language === 'ru' ? 'Отвечайте на комментарии в первый час — это повышает вовлечённость на 40%.' : 'Reply to comments within the first hour — increases engagement by 40%.', impact: '+40% ' + (language === 'ru' ? 'комментариев' : 'comments') },
+        ];
+        const priorityColors: Record<string, string> = { high: 'bg-red-50 border-red-200 text-red-700', medium: 'bg-amber-50 border-amber-200 text-amber-700', low: 'bg-blue-50 border-blue-200 text-blue-700' };
+        const priorityLabels: Record<string, string> = { high: language === 'ru' ? 'Высокий' : 'High', medium: language === 'ru' ? 'Средний' : 'Medium', low: language === 'ru' ? 'Низкий' : 'Low' };
+
+        return (
+          <div className="bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 rounded-2xl border border-amber-200 p-6 mb-6">
+            <div className="flex items-start gap-3 mb-6">
+              <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl flex items-center justify-center shrink-0">
+                <Lightbulb size={24} className="text-white" />
+              </div>
+              <div className="flex-1">
+                <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                  {language === 'ru' ? 'Рекомендации по улучшению' : 'Improvement recommendations'}
+                  <Sparkles size={20} className="text-amber-500" />
+                </h2>
+                <p className="text-slate-600 text-sm mt-1">
+                  {language === 'ru' ? 'AI проанализировал ваши показатели и подготовил персональные рекомендации для роста' : 'AI analyzed your metrics and prepared personalized recommendations for growth'}
+                </p>
+              </div>
+              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-amber-200">
+                <Award size={16} className="text-amber-600" />
+                <span className="text-sm font-medium text-amber-900">{language === 'ru' ? 'Потенциал роста' : 'Growth potential'}: +45%</span>
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              {recommendations.map(rec => (
+                <div key={rec.id} className="bg-white rounded-xl p-5 border border-slate-100 hover:shadow-lg transition group">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${rec.priority === 'high' ? 'bg-red-50' : rec.priority === 'medium' ? 'bg-amber-50' : 'bg-blue-50'}`}>
+                      <rec.icon size={18} className={rec.priority === 'high' ? 'text-red-600' : rec.priority === 'medium' ? 'text-amber-600' : 'text-blue-600'} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h4 className="font-bold text-slate-900 text-sm">{rec.title}</h4>
+                        <span className={`text-xs px-2 py-0.5 rounded-full border ${priorityColors[rec.priority]}`}>{priorityLabels[rec.priority]}</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">{rec.description}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                    <div className="flex items-center gap-1.5">
+                      <TrendingUp size={14} className="text-emerald-600" />
+                      <span className="text-sm font-bold text-emerald-700">{rec.impact}</span>
+                    </div>
+                    <button onClick={() => setCurrentPage('content-generator')} className="text-xs font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                      {language === 'ru' ? 'Применить' : 'Apply'} <ArrowUp size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Summary */}
+            <div className="mt-6 p-4 bg-white rounded-xl border border-amber-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center shrink-0">
+                  <CheckCircle2 size={20} className="text-white" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-bold text-slate-900 text-sm">{language === 'ru' ? 'Прогноз при применении всех рекомендаций' : 'Forecast when applying all recommendations'}</p>
+                  <div className="flex flex-wrap gap-3 mt-1.5">
+                    <span className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded">+45% {language === 'ru' ? 'просмотров' : 'views'}</span>
+                    <span className="text-xs px-2 py-1 bg-pink-50 text-pink-700 rounded">+35% {language === 'ru' ? 'вовлечения' : 'engagement'}</span>
+                    <span className="text-xs px-2 py-1 bg-purple-50 text-purple-700 rounded">+28% {language === 'ru' ? 'подписчиков' : 'followers'}</span>
+                  </div>
+                </div>
+                <button onClick={() => setCurrentPage('content-generator')} className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-lg text-sm font-medium hover:shadow-lg transition shrink-0">
+                  {language === 'ru' ? 'Применить всё' : 'Apply all'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* AI Insights */}
+      <div className="bg-white rounded-xl border border-slate-100 p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+            <Sparkles size={20} className="text-white" />
+          </div>
+          <div>
+            <h3 className="font-bold text-slate-900">{language === 'ru' ? 'AI-инсайты' : 'AI Insights'}</h3>
+            <p className="text-xs text-slate-500">{language === 'ru' ? 'Автоматический анализ ваших данных' : 'Automatic analysis of your data'}</p>
+          </div>
+        </div>
+        <div className="grid md:grid-cols-3 gap-4">
+          <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+            <div className="flex items-center gap-2 mb-2">
+              <Target size={16} className="text-blue-600" />
+              <span className="text-sm font-bold text-blue-900">{language === 'ru' ? 'Лучшее время' : 'Best time'}</span>
+            </div>
+            <p className="text-2xl font-bold text-slate-900">12:00 — 14:00</p>
+            <p className="text-xs text-slate-600 mt-1">{language === 'ru' ? 'Пик активности аудитории' : 'Audience activity peak'}</p>
+          </div>
+          <div className="p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-100">
+            <div className="flex items-center gap-2 mb-2">
+              <Award size={16} className="text-green-600" />
+              <span className="text-sm font-bold text-green-900">{language === 'ru' ? 'Топ контент' : 'Top content'}</span>
+            </div>
+            <p className="text-2xl font-bold text-slate-900">{language === 'ru' ? 'Видео' : 'Video'}</p>
+            <p className="text-xs text-slate-600 mt-1">{language === 'ru' ? 'В 3.2 раза эффективнее постов' : '3.2x more effective than posts'}</p>
+          </div>
+          <div className="p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border border-purple-100">
+            <div className="flex items-center gap-2 mb-2">
+              <TrendingUp size={16} className="text-purple-600" />
+              <span className="text-sm font-bold text-purple-900">{language === 'ru' ? 'Тренд' : 'Trend'}</span>
+            </div>
+            <p className="text-2xl font-bold text-slate-900">+{viewsGrowth}%</p>
+            <p className="text-xs text-slate-600 mt-1">{language === 'ru' ? 'Рост за последнюю неделю' : 'Growth over the last week'}</p>
           </div>
         </div>
       </div>
