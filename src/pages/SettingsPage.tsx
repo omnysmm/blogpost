@@ -5,7 +5,8 @@ import {
   Settings as SettingsIcon, Share2, Calendar, CreditCard, Tag,
   Key, Link2, Check, Plus, Trash2, Clock, Globe, Video,
   Bell, Shield, Zap, Crown, Star, Edit, Save, Eye, EyeOff,
-  AlertCircle, ChevronRight, RefreshCw, X, CheckCircle2
+  AlertCircle, ChevronRight, RefreshCw, X, CheckCircle2,
+  HelpCircle, ExternalLink, Copy
 } from 'lucide-react';
 
 type SettingsTab = 'social' | 'schedule' | 'payment' | 'plans';
@@ -81,6 +82,7 @@ export default function SettingsPage() {
   const [editingSocial, setEditingSocial] = useState<string | null>(null);
   const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({});
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showTelegramHelp, setShowTelegramHelp] = useState(false);
 
   const showSaveSuccess = (msg: string) => {
     setSaveMessage({ type: 'success', text: msg });
@@ -319,7 +321,7 @@ export default function SettingsPage() {
                       </div>
                       <p className="text-xs text-slate-500 mt-1">{language === 'ru' ? 'Получите API ключ в настройках разработчика соцсети' : 'Get API key in social network developer settings'}</p>
                     </div>
-                    {social.network === 'telegram' && (
+                    {social.network === 'telegram' && (<>
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Chat ID / Канал</label>
                         <input
@@ -331,7 +333,14 @@ export default function SettingsPage() {
                         />
                         <p className="text-xs text-slate-500 mt-1">{language === 'ru' ? 'ID канала, группы или пользователя для публикации' : 'Channel, group or user ID for publishing'}</p>
                       </div>
-                    )}
+                      <button
+                        onClick={() => setShowTelegramHelp(true)}
+                        className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 transition-colors"
+                      >
+                        <HelpCircle size={16} />
+                        {language === 'ru' ? 'Где найти API Key и Chat ID?' : 'Where to find API Key and Chat ID?'}
+                      </button>
+                    </>)}
                   </>)}
                   {social.method === 'manual' && (
                     <div>
@@ -805,6 +814,117 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ============ TELEGRAM HELP MODAL ============ */}
+      {showTelegramHelp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowTelegramHelp(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-slate-100 p-5 flex items-center justify-between z-10">
+              <h3 className="font-bold text-xl text-slate-900 flex items-center gap-2">
+                <HelpCircle size={20} className="text-blue-500" />
+                {language === 'ru' ? 'Настройка Telegram бота' : 'Telegram Bot Setup'}
+              </h3>
+              <button onClick={() => setShowTelegramHelp(false)} className="p-2 hover:bg-slate-100 rounded-lg"><X size={18} /></button>
+            </div>
+            <div className="p-6 space-y-6">
+
+              {/* Step 1 */}
+              <div className="flex gap-4">
+                <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-lg shrink-0">1</div>
+                <div className="flex-1">
+                  <h4 className="font-bold text-slate-900 mb-2">{language === 'ru' ? 'Создайте бота в Telegram' : 'Create a Telegram bot'}</h4>
+                  <p className="text-sm text-slate-600 mb-3">{language === 'ru' ? 'Откройте Telegram и найдите @BotFather — официальный бот для создания ботов.' : 'Open Telegram and find @BotFather — the official bot for creating bots.'}</p>
+                  <div className="bg-slate-50 rounded-lg p-4 border border-slate-200 font-mono text-sm">
+                    <p className="text-slate-500 mb-1"># {language === 'ru' ? 'Отправьте команду:' : 'Send the command:'}</p>
+                    <p className="text-blue-600">/newbot</p>
+                    <p className="text-slate-500 mt-2 mb-1"># {language === 'ru' ? 'Введите имя бота:' : 'Enter bot name:'}</p>
+                    <p className="text-slate-700">BlogPost Bot</p>
+                    <p className="text-slate-500 mt-2 mb-1"># {language === 'ru' ? 'Введите username бота:' : 'Enter bot username:'}</p>
+                    <p className="text-slate-700">myblogpost_bot</p>
+                  </div>
+                  <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <p className="text-sm text-amber-800">
+                      <strong>{language === 'ru' ? 'Результат:' : 'Result:'}</strong> {language === 'ru' ? 'BotFather пришлёт вам токен вида:' : 'BotFather will send you a token like:'}
+                    </p>
+                    <p className="font-mono text-sm text-amber-900 mt-1">123456789:ABCdefGHIjklMNOpqrsTUVwxyz</p>
+                    <p className="text-xs text-amber-700 mt-1">{language === 'ru' ? 'Это и есть ваш API Key — вставьте его в поле "API Key" выше.' : 'This is your API Key — paste it in the "API Key" field above.'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 2 */}
+              <div className="flex gap-4">
+                <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-lg shrink-0">2</div>
+                <div className="flex-1">
+                  <h4 className="font-bold text-slate-900 mb-2">{language === 'ru' ? 'Добавьте бота в канал/группу' : 'Add bot to channel/group'}</h4>
+                  <p className="text-sm text-slate-600 mb-3">{language === 'ru' ? 'Бот должен быть администратором канала или группы, куда вы хотите публиковать.' : 'The bot must be an admin of the channel or group you want to publish to.'}</p>
+                  <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                    <div className="flex items-start gap-3 mb-3">
+                      <span className="text-2xl">📢</span>
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{language === 'ru' ? 'Для канала:' : 'For a channel:'}</p>
+                        <p className="text-xs text-slate-600">{language === 'ru' ? 'Откройте канал → Настройки → Администраторы → Добавить администратора → найдите вашего бота' : 'Open channel → Settings → Administrators → Add administrator → find your bot'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl">👥</span>
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{language === 'ru' ? 'Для группы:' : 'For a group:'}</p>
+                        <p className="text-xs text-slate-600">{language === 'ru' ? 'Откройте группу → Настройки → Администраторы → Добавить → найдите вашего бота' : 'Open group → Settings → Administrators → Add → find your bot'}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 3 */}
+              <div className="flex gap-4">
+                <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-lg shrink-0">3</div>
+                <div className="flex-1">
+                  <h4 className="font-bold text-slate-900 mb-2">{language === 'ru' ? 'Получите Chat ID' : 'Get Chat ID'}</h4>
+                  <p className="text-sm text-slate-600 mb-3">{language === 'ru' ? 'Chat ID — это числовой идентификатор канала или группы.' : 'Chat ID is a numeric identifier for the channel or group.'}</p>
+                  <div className="bg-slate-50 rounded-lg p-4 border border-slate-200 space-y-3">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{language === 'ru' ? 'Способ 1: Через @userinfobot' : 'Method 1: Via @userinfobot'}</p>
+                      <p className="text-xs text-slate-600">{language === 'ru' ? 'Перешлите любое сообщение из канала боту @userinfobot — он покажет Chat ID.' : 'Forward any message from the channel to @userinfobot — it will show the Chat ID.'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{language === 'ru' ? 'Способ 2: Через @getmyid_bot' : 'Method 2: Via @getmyid_bot'}</p>
+                      <p className="text-xs text-slate-600">{language === 'ru' ? 'Напишите /start в канале после добавления бота — получите ID.' : 'Send /start in the channel after adding the bot — get the ID.'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{language === 'ru' ? 'Способ 3: username канала' : 'Method 3: Channel username'}</p>
+                      <p className="text-xs text-slate-600">{language === 'ru' ? 'Если у канала есть username, просто введите его: @mychannel' : 'If the channel has a username, just enter it: @mychannel'}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 bg-green-50 border border-green-200 rounded-lg p-3">
+                    <p className="text-sm text-green-800">
+                      <strong>{language === 'ru' ? 'Готово!' : 'Done!'}</strong> {language === 'ru' ? 'Вставьте Chat ID в поле "Chat ID / Канал" выше и нажмите Сохранить.' : 'Paste the Chat ID in the "Chat ID / Channel" field above and click Save.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick links */}
+              <div className="border-t border-slate-100 pt-4">
+                <p className="text-sm font-medium text-slate-700 mb-3">{language === 'ru' ? 'Полезные ссылки:' : 'Useful links:'}</p>
+                <div className="space-y-2">
+                  <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700">
+                    <ExternalLink size={14} /> @BotFather — {language === 'ru' ? 'создание ботов' : 'bot creation'}
+                  </a>
+                  <a href="https://t.me/userinfobot" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700">
+                    <ExternalLink size={14} /> @userinfobot — {language === 'ru' ? 'получение Chat ID' : 'get Chat ID'}
+                  </a>
+                  <a href="https://core.telegram.org/bots/api" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700">
+                    <ExternalLink size={14} /> Telegram Bot API — {language === 'ru' ? 'документация' : 'documentation'}
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
