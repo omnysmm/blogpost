@@ -120,14 +120,6 @@ export default function SettingsPage() {
 
   const updateApiKey = (id: string, apiKey: string) => {
     setSocials(prev => prev.map(s => s.id === id ? { ...s, apiKey } : s));
-    // Persist Telegram config to Supabase
-    const social = socials.find(s => s.id === id);
-    if (social?.network === 'telegram' && apiKey && currentUser) {
-      import('../services/telegram').then(({ saveTelegramConfig }) => {
-        // Extract chat_id from the token or use a default
-        saveTelegramConfig(currentUser.id, apiKey, social.accountId || '');
-      });
-    }
   };
 
   const updateLogin = (id: string, login: string) => {
