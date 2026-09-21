@@ -520,19 +520,6 @@ export default function ContentGeneratorPage() {
               </div>
             )}
           </div>
-
-          {/* AI Models Info */}
-          <div className="bg-white rounded-xl p-5 border border-slate-100">
-            <h3 className="font-bold text-slate-900 mb-3">{language === 'ru' ? 'Доступные бесплатные нейросети' : 'Available free neural networks'}</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {aiModels.map(model => (
-                <div key={model.id} className="p-3 bg-slate-50 rounded-lg text-center">
-                  <p className="text-sm font-medium text-slate-900">{model.name}</p>
-                  <p className="text-xs text-slate-500">{model.type}</p>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
       )}

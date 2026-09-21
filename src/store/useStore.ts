@@ -112,7 +112,7 @@ export const useStore = create<AppState>((set, get) => ({
         if (!error && data.user) {
           const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single();
           if (profile) {
-            set({ currentUser: profile as User });
+            set({ currentUser: profile as User, currentPage: 'dashboard' });
             return true;
           }
         }
@@ -134,6 +134,7 @@ export const useStore = create<AppState>((set, get) => ({
           subscription: 'premium',
           registeredAt: new Date().toISOString(),
         },
+        currentPage: 'dashboard',
       });
       return true;
     }
@@ -143,7 +144,7 @@ export const useStore = create<AppState>((set, get) => ({
     const user = users.find((u: any) => u.email === email);
     if (user && user.password === password) {
       const { password: _, ...userWithoutPassword } = user;
-      set({ currentUser: userWithoutPassword });
+      set({ currentUser: userWithoutPassword, currentPage: 'dashboard' });
       return true;
     }
     return false;
@@ -164,7 +165,7 @@ export const useStore = create<AppState>((set, get) => ({
         // Profile is auto-created by trigger
         const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single();
         if (profile) {
-          set({ currentUser: profile as User });
+          set({ currentUser: profile as User, currentPage: 'dashboard' });
           return true;
         }
       } catch (e) {
@@ -189,7 +190,7 @@ export const useStore = create<AppState>((set, get) => ({
     users.push(newUser);
     saveLocalUsers(users);
     const { password: _, ...userWithoutPassword } = newUser;
-    set({ currentUser: userWithoutPassword });
+    set({ currentUser: userWithoutPassword, currentPage: 'dashboard' });
     return true;
   },
 
