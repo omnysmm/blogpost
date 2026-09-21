@@ -1,6 +1,6 @@
 import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
-import { Home, LayoutDashboard, Wand2, BarChart3, Share2, CreditCard, Megaphone, HeadphonesIcon, Shield, User, Menu, X, Globe, Settings } from 'lucide-react';
+import { LayoutDashboard, Wand2, BarChart3, Share2, CreditCard, Megaphone, HeadphonesIcon, Shield, User, Menu, X, Globe, Settings } from 'lucide-react';
 import { useState } from 'react';
 
 export default function Header() {
@@ -9,10 +9,8 @@ export default function Header() {
   const [showLangMenu, setShowLangMenu] = useState(false);
 
   const navItems = [
-    { id: 'home', icon: Home, label: t.home },
     { id: 'dashboard', icon: LayoutDashboard, label: t.dashboard },
     { id: 'content-generator', icon: Wand2, label: t.contentGenerator },
-    { id: 'analytics', icon: BarChart3, label: t.analytics },
     { id: 'subscriptions', icon: CreditCard, label: t.subscriptions },
     { id: 'advertiser', icon: Megaphone, label: language === 'ru' ? 'Рекламный кабинет' : 'Ad Cabinet' },
     { id: 'support', icon: HeadphonesIcon, label: t.support },
@@ -43,7 +41,7 @@ export default function Header() {
           {/* Navigation — visible only after login */}
           {currentUser && (
             <nav className="hidden lg:flex items-center gap-1">
-              {navItems.slice(0, 6).map(item => (
+              {navItems.map(item => (
                 <button
                   key={item.id}
                   onClick={() => setCurrentPage(item.id)}
