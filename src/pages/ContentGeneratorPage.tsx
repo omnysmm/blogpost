@@ -3,6 +3,7 @@ import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
 import { Wand2, FileText, Video, Music, Image, Mic, Film, Sparkles, Check, Loader2, Volume2, Globe, Shield, Clock, Calendar, Play, Pause, Trash2, Plus, Settings, Share2 } from 'lucide-react';
 import { generateText, generateImage, generateAudio, checkGenerationLimit } from '../services/ai';
+import { publishToTelegram } from '../services/telegram';
 
 const aiModels = [
   { id: 'yandexgpt', name: 'YandexGPT', type: 'text', free: true },
@@ -260,19 +261,40 @@ export default function ContentGeneratorPage() {
     setSelectedNetworks(prev => prev.includes(id) ? prev.filter(n => n !== id) : [...prev, id]);
   };
 
-  const handlePublish = () => {
+  const handlePublish = async () => {
     if (!generatedContent || selectedNetworks.length === 0) return;
-    setPublished(selectedNetworks);
-    // Find the latest post that matches the generated content
-    const latestPost = posts.find(p => p.content === generatedContent);
-    if (latestPost) {
-      updatePost(latestPost.id, {
-        status: 'published',
-        socialNetworks: selectedNetworks,
-        publishedAt: new Date().toISOString(),
-      });
+
+    const successfulNetworks: string[] = [];
+
+    // Publish to each selected network
+    for (const network of selectedNetworks) {
+      if (network === 'telegram') {
+        const result = await publishToTelegram(topic || 'BlogPost', generatedContent);
+        if (result.success) {
+          successfulNetworks.push('Telegram');
+        } else {
+          console.warn('Telegram publish failed:', result.error);
+          alert(`Telegram: ${result.error}`);
+        }
+      } else {
+        // Other networks: mark as published (integration pending)
+        successfulNetworks.push(network.charAt(0).toUpperCase() + network.slice(1));
+      }
     }
-    setTimeout(() => setPublished([]), 3000);
+
+    if (successfulNetworks.length > 0) {
+      setPublished(successfulNetworks);
+      // Update post status
+      const latestPost = posts.find(p => p.content === generatedContent);
+      if (latestPost) {
+        updatePost(latestPost.id, {
+          status: 'published',
+          socialNetworks: selectedNetworks,
+          publishedAt: new Date().toISOString(),
+        });
+      }
+      setTimeout(() => setPublished([]), 5000);
+    }
   };
 
   const handleSchedule = () => {

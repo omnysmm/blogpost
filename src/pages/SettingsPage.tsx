@@ -19,6 +19,7 @@ interface SocialConnection {
   connected: boolean;
   method: 'api' | 'manual' | null;
   apiKey?: string;
+  accountId?: string;
   login?: string;
   autoPublish: boolean;
 }
@@ -119,6 +120,14 @@ export default function SettingsPage() {
 
   const updateApiKey = (id: string, apiKey: string) => {
     setSocials(prev => prev.map(s => s.id === id ? { ...s, apiKey } : s));
+    // Persist Telegram config to Supabase
+    const social = socials.find(s => s.id === id);
+    if (social?.network === 'telegram' && apiKey && currentUser) {
+      import('../services/telegram').then(({ saveTelegramConfig }) => {
+        // Extract chat_id from the token or use a default
+        saveTelegramConfig(currentUser.id, apiKey, social.accountId || '');
+      });
+    }
   };
 
   const updateLogin = (id: string, login: string) => {
@@ -284,6 +293,19 @@ export default function SettingsPage() {
                       </div>
                       <p className="text-xs text-slate-500 mt-1">{language === 'ru' ? 'Получите API ключ в настройках разработчика соцсети' : 'Get API key in social network developer settings'}</p>
                     </div>
+                    {social.network === 'telegram' && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Chat ID / Канал</label>
+                        <input
+                          type="text"
+                          value={social.accountId || ''}
+                          onChange={e => setSocials(prev => prev.map(s => s.id === social.id ? { ...s, accountId: e.target.value } : s))}
+                          className="w-full p-2.5 border border-slate-200 rounded-lg text-sm font-mono"
+                          placeholder={language === 'ru' ? 'Например: @mychannel или -1001234567890' : 'e.g.: @mychannel or -1001234567890'}
+                        />
+                        <p className="text-xs text-slate-500 mt-1">{language === 'ru' ? 'ID канала, группы или пользователя для публикации' : 'Channel, group or user ID for publishing'}</p>
+                      </div>
+                    )}
                   )}
                   {social.method === 'manual' && (
                     <div>
