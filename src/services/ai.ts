@@ -1,6 +1,8 @@
 // AI Service — единый интерфейс для всех AI-моделей
 // Использует Supabase Edge Functions для защиты API-ключей
 
+import { type ContentKind } from './contentEngine';
+
 export type AIModel = 'yandexgpt' | 'gigachat' | 'auto';
 export type ContentType = 'post' | 'article' | 'video_script' | 'music' | 'image';
 
@@ -27,44 +29,116 @@ interface GenerateAudioOptions {
 
 // ═══ Text Generation ═══
 export async function generateText(options: GenerateTextOptions): Promise<string> {
-  const { prompt, model = 'auto', maxLength = 2000, language = 'ru', tone = 'professional' } = options;
+  const { prompt, maxLength = 2000, language = 'ru' } = options;
 
   const systemPrompt = language === 'ru'
-    ? `Ты — профессиональный контент-мейкер. Создай ${tone === 'professional' ? 'профессиональный' : tone === 'casual' ? 'неформальный' : 'креативный'} текст на тему. Максимум ${maxLength} символов.`
-    : `You are a professional content creator. Create a ${tone} text on the topic. Max ${maxLength} characters.`;
+    ? `Ты — опытный редактор. Пиши связный содержательный текст СТРОГО по теме запроса: факты, детали, структура. Без воды. Не больше ${maxLength} символов. Только готовый материал.`
+    : `You are an expert editor. Write coherent factual content STRICTLY on the topic. Max ${maxLength} chars.`;
 
-  const selectedModel = model === 'auto' ? selectBestModel('text', language) : model;
-
+  // 1) Local Vite middleware (server-side LLM) — most reliable
   try {
-    const response = await callEdgeFunction('ai-generate-text', {
-      prompt,
-      systemPrompt,
-      model: selectedModel,
-      maxLength,
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, system: systemPrompt, language }),
     });
-    return response.text || '';
-  } catch (error) {
-    console.error('AI text generation failed:', error);
-    throw new Error('Ошибка генерации текста. Попробуйте позже.');
+    const data = await res.json();
+    const text = String(data?.text || '').trim();
+    if (res.ok && text.length > 40) return text;
+    console.warn('Vite /api/generate returned weak result', res.status, data?.error);
+  } catch (e) {
+    console.warn('Vite /api/generate failed:', e);
+  }
+
+  // 2) Direct / proxied OpenAI-compatible endpoints
+  const tries: Array<{ url: string; model: string }> = [
+    { url: '/api/llm/openai', model: 'openai' },
+    { url: '/api/llm/openai', model: 'openai-fast' },
+    { url: 'https://text.pollinations.ai/openai', model: 'openai' },
+  ];
+  for (const t of tries) {
+    try {
+      const text = await postOpenAI(t.url, {
+        model: t.model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `${prompt}` },
+        ],
+        max_tokens: 1200,
+        temperature: 0.7,
+      });
+      if (text && text.length > 40) return text;
+    } catch (e) {
+      console.warn(`LLM ${t.model} @ ${t.url} failed:`, e);
+    }
+  }
+
+  throw new Error(
+    language === 'ru'
+      ? 'Не удалось сгенерировать текст по теме. Проверьте соединение и попробуйте ещё раз.'
+      : 'Failed to generate topic text. Check connection and try again.'
+  );
+}
+
+async function postOpenAI(endpoint: string, body: Record<string, unknown>): Promise<string> {
+  const ctrl = new AbortController();
+  const timer = window.setTimeout(() => ctrl.abort(), 120_000);
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error(`LLM HTTP ${res.status}`);
+    const raw = await res.text();
+    let text = '';
+    try {
+      const data = JSON.parse(raw);
+      text = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || data?.text || '';
+    } catch {
+      text = raw;
+    }
+    return String(text)
+      .replace(/^[\s\S]*?<\/think>/i, '')
+      .replace(/^```[a-z]*\n?/i, '')
+      .replace(/\n?```$/i, '')
+      .trim();
+  } finally {
+    window.clearTimeout(timer);
   }
 }
 
 // ═══ Image Generation ═══
 export async function generateImage(options: GenerateImageOptions): Promise<string> {
-  const { prompt, width = 1024, height = 1024, style = 'realistic' } = options;
+  const { prompt, width = 1024, height = 640, style = 'realistic' } = options;
+  const cleanPrompt = String(prompt || 'beautiful editorial photo')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 600);
+  const fullPrompt = `${cleanPrompt}, ${style} photography, high quality, detailed, sharp focus, professional`;
+  const seed = Math.floor(Math.random() * 1_000_000);
+  const qs = `?width=${width}&height=${height}&nologo=true&enhance=true&seed=${seed}`;
+  const candidates = [
+    `/api/img/prompt/${encodeURIComponent(fullPrompt)}${qs}`,
+    `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}${qs}`,
+  ];
 
-  try {
-    const response = await callEdgeFunction('ai-generate-image', {
-      prompt: `${prompt}, ${style} style`,
-      width,
-      height,
-      model: 'kandinsky',
-    });
-    return response.imageUrl || response.base64 || '';
-  } catch (error) {
-    console.error('AI image generation failed:', error);
-    throw new Error('Ошибка генерации изображения. Попробуйте позже.');
+  for (const url of candidates) {
+    try {
+      const ctrl = new AbortController();
+      const timer = window.setTimeout(() => ctrl.abort(), 120_000);
+      const res = await fetch(url, { signal: ctrl.signal });
+      window.clearTimeout(timer);
+      if (res.ok) {
+        const blob = await res.blob();
+        if (blob.size > 1000) return URL.createObjectURL(blob);
+      }
+    } catch (e) {
+      console.warn('Image fetch failed for', url, e);
+    }
   }
+  return candidates[0];
 }
 
 // ═══ Audio Generation (TTS) ═══
@@ -146,8 +220,8 @@ async function callEdgeFunction(functionName: string, payload: Record<string, un
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
   if (!supabaseUrl) {
-    // Fallback: mock responses for development
-    return mockResponse(functionName, payload);
+    // Fallback: mock responses for development (marked so generateText can try live AI)
+    return { ...mockResponse(functionName, payload), __mock: true };
   }
 
   try {
@@ -162,137 +236,33 @@ async function callEdgeFunction(functionName: string, payload: Record<string, un
 
     if (!response.ok) {
       console.warn(`Edge function ${functionName} returned ${response.status}, using mock`);
-      return mockResponse(functionName, payload);
+      return { ...mockResponse(functionName, payload), __mock: true };
     }
 
-    return response.json();
+    const data = await response.json();
+    if (data && (data.text || data.imageUrl || data.audioUrl || data.videoUrl || data.musicUrl)) {
+      return data;
+    }
+    return { ...mockResponse(functionName, payload), __mock: true };
   } catch (err) {
     console.warn(`Edge function ${functionName} unreachable, using mock:`, err);
-    return mockResponse(functionName, payload);
+    return { ...mockResponse(functionName, payload), __mock: true };
   }
 }
 
 // ═══ Mock Response (development fallback) ═══
 function mockResponse(functionName: string, payload: Record<string, unknown>): any {
+  const promptAny = String((payload as any).prompt || (payload as any).text || '');
+  const topicMatch = promptAny.match(/["«]([^"»]+)["»]/);
+  const topic = topicMatch ? topicMatch[1] : promptAny.slice(0, 80);
+
   switch (functionName) {
     case 'ai-generate-text': {
-      const prompt = (payload as any).prompt || '';
-      const topicMatch = prompt.match(/["«](.+?)["»]/);
-      const topic = topicMatch ? topicMatch[1] : prompt.slice(0, 40);
-      const isArticle = prompt.includes('статью') || prompt.includes('article');
-      const isVideo = prompt.includes('сценари') || prompt.includes('script');
-      const isMusic = prompt.includes('песн') || prompt.includes('lyrics');
-
-      if (isVideo) {
-        return {
-          text: `[00:00 – 00:15] Вступление
-Камера плавно наезжает на ведущего. Приветствие зрителей, анонс темы.
-
-[00:15 – 02:00] Основная тема: ${topic}
-Подробный разбор ключевых аспектов. Демонстрация примеров на экране.
-
-[02:00 – 04:00] Практические советы
-3 конкретных шага, которые зритель может применить прямо сейчас.
-
-[04:00 – 05:30] Заключение
-Подведение итогов. Призыв к действию — подписаться и задать вопросы в комментариях.
-
-🎵 Фоновая музыка: мотивирующая, негромкая
-🎤 Озвучка: профессиональная
-🎨 Визуальный стиль: современный, чистый`,
-        };
-      }
-
-      if (isMusic) {
-        return {
-          text: `🎵 ${topic}
-
-[Куплет 1]
-В ритме города, в потоке огней,
-Мы идём вперёд, не зная теней.
-Каждый шаг — это выбор судьбы,
-Каждый миг — это шанс для мечты.
-
-[Припев]
-Горим как звёзды, светим в темноте,
-Музыка в сердце, ритм в высоте.
-${topic} — это наша история,
-Мелодия жизни, наша территория.
-
-[Куплет 2]
-Не оглядывайся, только вперёд,
-Всё что было — уже не спасёт.
-Новая глава начинается здесь,
-С каждым аккордом, с каждой из песен.
-
-[Припев]
-Горим как звёзды, светим в темноте,
-Музыка в сердце, ритм в высоте.
-
-[Бридж]
-И когда мир замолчит,
-Наша песня зазвучит.`,
-        };
-      }
-
-      if (isArticle) {
-        return {
-          text: `# ${topic}
-
-## Введение
-
-Тема «${topic}» становится всё более актуальной в современном мире. В этой статье мы подробно разберём ключевые аспекты и дадим практические рекомендации.
-
-## Почему это важно
-
-По данным исследований, интерес к данной теме вырос на 340% за последний год. Эксперты отмечают несколько ключевых факторов:
-
-- Рост осведомлённости аудитории
-- Технологические изменения в индустрии
-- Новые возможности для монетизации
-
-## Ключевые аспекты
-
-### 1. Основы
-
-Для начала важно понять базовые принципы. Каждый профессионал должен знать фундамент, на котором строится вся работа.
-
-### 2. Практическое применение
-
-Теория без практики не даёт результатов. Рекомендуем начать с малого и постепенно масштабировать.
-
-### 3. Тренды и прогнозы
-
-На основе анализа рынка можно выделить несколько устойчивых трендов, которые будут определять развитие в ближайшие годы.
-
-## Заключение
-
-«${topic}» — это направление с огромным потенциалом. Начните применять эти знания уже сегодня, и результат не заставит себя ждать.
-
-#блог #контент #AI #BlogPost #${topic.replace(/\s+/g, '')}`,
-        };
-      }
-
-      // Default: post
-      return {
-        text: `📝 ${topic}
-
-Всем привет! Сегодня хочу поделиться мыслями на тему «${topic}».
-
-🔹 Это направление стремительно развивается и открывает новые возможности для каждого из нас.
-
-🔹 Главное — начать действовать. Не бойтесь экспериментировать и пробовать новое.
-
-🔹 Окружите себя единомышленниками, которые разделяют ваши цели и ценности.
-
-💡 Вывод: «${topic}» — это не просто тренд, а реальный инструмент для роста и развития.
-
-А что вы думаете? Делитесь мнением в комментариях! 👇
-
-#блог #контент #AI #BlogPost #${topic.replace(/\s+/g, '')}`,
-      };
+      // Never return a generic stub — force callers to use live LLM / fail loudly
+      return { text: '', __mock: true };
     }
     case 'ai-generate-image':
+      // Images are built in generateImage() with a real AI URL
       return { imageUrl: '', base64: '' };
     case 'ai-generate-audio':
       return { audioUrl: '', base64: '' };

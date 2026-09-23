@@ -27,13 +27,13 @@ interface PublishResult {
 
 // ═══ Network Configurations ═══
 export const NETWORK_CONFIG: Record<SocialNetwork, { name: string; color: string; icon: string; oauthUrl: string }> = {
-  vk: { name: 'VKontakte', color: '#4680C2', icon: 'VK', oauthUrl: 'https://oauth.vk.com/authorize' },
-  telegram: { name: 'Telegram', color: '#26A5E4', icon: 'TG', oauthUrl: 'https://t.me' },
-  youtube: { name: 'YouTube', color: '#FF0000', icon: 'YT', oauthUrl: 'https://accounts.google.com/o/oauth2/auth' },
-  instagram: { name: 'Instagram', color: '#E1306C', icon: 'IG', oauthUrl: 'https://www.facebook.com/v18.0/dialog/oauth' },
-  tiktok: { name: 'TikTok', color: '#010101', icon: 'TK', oauthUrl: 'https://www.tiktok.com/auth/authorize' },
-  ok: { name: 'Одноклассники', color: '#EE8208', icon: 'OK', oauthUrl: 'https://connect.ok.ru/oauth' },
-  rutube: { name: 'Rutube', color: '#0ECF6C', icon: 'RT', oauthUrl: 'https://rutube.ru/auth' },
+  vk: { name: 'VK', color: '#0077FF', icon: 'vk', oauthUrl: 'https://oauth.vk.com/authorize' },
+  telegram: { name: 'Telegram', color: '#26A5E4', icon: 'telegram', oauthUrl: 'https://t.me' },
+  youtube: { name: 'YouTube', color: '#FF0000', icon: 'youtube', oauthUrl: 'https://accounts.google.com/o/oauth2/auth' },
+  instagram: { name: 'Instagram', color: '#E1306C', icon: 'instagram', oauthUrl: 'https://www.facebook.com/v18.0/dialog/oauth' },
+  tiktok: { name: 'TikTok', color: '#010101', icon: 'tiktok', oauthUrl: 'https://www.tiktok.com/auth/authorize' },
+  ok: { name: 'ОК', color: '#EE8208', icon: 'ok', oauthUrl: 'https://connect.ok.ru/oauth' },
+  rutube: { name: 'Rutube', color: '#0ECF6C', icon: 'rutube', oauthUrl: 'https://rutube.ru/auth' },
 };
 
 // ═══ OAuth Connection ═══

@@ -41,8 +41,9 @@ export async function getUserAnalytics(userId: string, days: number = 30): Promi
   totalViews: number;
   totalLikes: number;
   totalShares: number;
-  byNetwork: Record<string, { views: number; likes: number; shares: number }>;
-  daily: Array<{ date: string; views: number; likes: number; shares: number }>;
+  totalPublications: number;
+  byNetwork: Record<string, { views: number; likes: number; shares: number; publications: number }>;
+  daily: Array<{ date: string; views: number; likes: number; shares: number; publications: number }>;
 }> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
@@ -56,7 +57,7 @@ export async function getUserAnalytics(userId: string, days: number = 30): Promi
     const startStr = startDate.toISOString().split('T')[0];
 
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/analytics?user_id=eq.${userId}&date=gte.${startStr}&select=network,views,likes,shares,date`,
+      `${supabaseUrl}/rest/v1/analytics?user_id=eq.${userId}&date=gte.${startStr}&select=network,views,likes,shares,publications,date`,
       {
         headers: {
           'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || '',
@@ -69,28 +70,31 @@ export async function getUserAnalytics(userId: string, days: number = 30): Promi
     const totalViews = data.reduce((s: number, r: any) => s + r.views, 0);
     const totalLikes = data.reduce((s: number, r: any) => s + r.likes, 0);
     const totalShares = data.reduce((s: number, r: any) => s + r.shares, 0);
+    const totalPublications = data.reduce((s: number, r: any) => s + (r.publications || 0), 0);
 
-    const byNetwork: Record<string, { views: number; likes: number; shares: number }> = {};
+    const byNetwork: Record<string, { views: number; likes: number; shares: number; publications: number }> = {};
     data.forEach((r: any) => {
-      if (!byNetwork[r.network]) byNetwork[r.network] = { views: 0, likes: 0, shares: 0 };
+      if (!byNetwork[r.network]) byNetwork[r.network] = { views: 0, likes: 0, shares: 0, publications: 0 };
       byNetwork[r.network].views += r.views;
       byNetwork[r.network].likes += r.likes;
       byNetwork[r.network].shares += r.shares;
+      byNetwork[r.network].publications += r.publications || 0;
     });
 
-    const dailyMap: Record<string, { views: number; likes: number; shares: number }> = {};
+    const dailyMap: Record<string, { views: number; likes: number; shares: number; publications: number }> = {};
     data.forEach((r: any) => {
-      if (!dailyMap[r.date]) dailyMap[r.date] = { views: 0, likes: 0, shares: 0 };
+      if (!dailyMap[r.date]) dailyMap[r.date] = { views: 0, likes: 0, shares: 0, publications: 0 };
       dailyMap[r.date].views += r.views;
       dailyMap[r.date].likes += r.likes;
       dailyMap[r.date].shares += r.shares;
+      dailyMap[r.date].publications += r.publications || 0;
     });
 
     const daily = Object.entries(dailyMap)
       .map(([date, stats]) => ({ date, ...stats }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    return { totalViews, totalLikes, totalShares, byNetwork, daily };
+    return { totalViews, totalLikes, totalShares, totalPublications, byNetwork, daily };
   } catch {
     return generateMockAnalytics(days);
   }
@@ -98,20 +102,21 @@ export async function getUserAnalytics(userId: string, days: number = 30): Promi
 
 // ═══ Mock Analytics ═══
 function generateMockAnalytics(days: number) {
-  const networks = ['vk', 'telegram', 'youtube', 'instagram', 'tiktok', 'ok'];
-  const byNetwork: Record<string, { views: number; likes: number; shares: number }> = {};
-  const daily: Array<{ date: string; views: number; likes: number; shares: number }> = [];
-
-  let totalViews = 0, totalLikes = 0, totalShares = 0;
+  const networks = ['vk', 'telegram', 'youtube', 'instagram', 'tiktok', 'ok', 'rutube'];
+  const byNetwork: Record<string, { views: number; likes: number; shares: number; publications: number }> = {};
+  const daily: Array<{ date: string; views: number; likes: number; shares: number; publications: number }> = [];
+  let totalViews = 0, totalLikes = 0, totalShares = 0, totalPublications = 0;
 
   networks.forEach(net => {
     const views = Math.floor(Math.random() * 50000) + 1000;
     const likes = Math.floor(views * (Math.random() * 0.1 + 0.02));
     const shares = Math.floor(likes * (Math.random() * 0.3 + 0.1));
-    byNetwork[net] = { views, likes, shares };
+    const publications = Math.floor(Math.random() * 30) + 5;
+    byNetwork[net] = { views, likes, shares, publications };
     totalViews += views;
     totalLikes += likes;
     totalShares += shares;
+    totalPublications += publications;
   });
 
   for (let i = days - 1; i >= 0; i--) {
@@ -120,10 +125,11 @@ function generateMockAnalytics(days: number) {
     const views = Math.floor(Math.random() * 3000) + 500;
     const likes = Math.floor(views * (Math.random() * 0.1 + 0.02));
     const shares = Math.floor(likes * (Math.random() * 0.3 + 0.1));
-    daily.push({ date: date.toISOString().split('T')[0], views, likes, shares });
+    const publications = Math.floor(Math.random() * 3);
+    daily.push({ date: date.toISOString().split('T')[0], views, likes, shares, publications });
   }
 
-  return { totalViews, totalLikes, totalShares, byNetwork, daily };
+  return { totalViews, totalLikes, totalShares, totalPublications, byNetwork, daily };
 }
 
 // ═══ Export Analytics ═══

@@ -5,8 +5,9 @@ import {
   BarChart3, Eye, Heart, Share2, TrendingUp, Calendar,
   Lightbulb, Target, Zap, Award, AlertTriangle, CheckCircle2,
   ArrowUp, ArrowDown, Info, Sparkles, Video, FileText,
-  Users, Clock, ThumbsUp, MessageSquare, Share
+  Users, Clock, ThumbsUp, MessageSquare, Share, Send
 } from 'lucide-react';
+import SocialIcon from '../components/SocialIcon';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar, Legend, LineChart, Line,
@@ -15,18 +16,19 @@ import {
 } from 'recharts';
 
 export default function AnalyticsPage() {
-  const { language, analytics, loadAnalytics, exportAnalyticsCSV } = useStore();
+  const { language, analytics, loadAnalytics, exportAnalyticsCSV, loadPosts } = useStore();
   const t = translations[language];
   const [selectedNetwork, setSelectedNetwork] = useState('all');
   const [period, setPeriod] = useState('30');
   const [activeChart, setActiveChart] = useState<'views' | 'engagement' | 'growth'>('views');
 
   useEffect(() => {
+    loadPosts();
     loadAnalytics(parseInt(period));
   }, [period]);
 
-  const networks = ['all', 'vk', 'telegram', 'youtube', 'instagram', 'tiktok', 'ok'];
-  const networkNames: Record<string, string> = { all: language === 'ru' ? 'Все' : 'All', vk: 'VKontakte', telegram: 'Telegram', youtube: 'YouTube', instagram: 'Instagram', tiktok: 'TikTok', ok: 'OK' };
+  const networks = ['all', 'vk', 'telegram', 'youtube', 'instagram', 'tiktok', 'ok', 'rutube'];
+  const networkNames: Record<string, string> = { all: language === 'ru' ? 'Все' : 'All', vk: 'VK', telegram: 'Telegram', youtube: 'YouTube', instagram: 'Instagram', tiktok: 'TikTok', ok: 'ОК', rutube: 'Rutube' };
 
   const filteredData = analytics.filter(a => selectedNetwork === 'all' || a.network === selectedNetwork);
 
@@ -36,29 +38,36 @@ export default function AnalyticsPage() {
       existing.views += item.views;
       existing.likes += item.likes;
       existing.shares += item.shares;
+      existing.publications += item.publications || 0;
       existing.comments += Math.floor(item.likes * 0.3);
     } else {
-      acc.push({ date: item.date, views: item.views, likes: item.likes, shares: item.shares, comments: Math.floor(item.likes * 0.3) });
+      acc.push({ date: item.date, views: item.views, likes: item.likes, shares: item.shares, publications: item.publications || 0, comments: Math.floor(item.likes * 0.3) });
     }
     return acc;
-  }, [] as { date: string; views: number; likes: number; shares: number; comments: number }[]).sort((a, b) => a.date.localeCompare(b.date));
+  }, [] as { date: string; views: number; likes: number; shares: number; publications: number; comments: number }[]).sort((a, b) => a.date.localeCompare(b.date));
 
   const networkStats = networks.filter(n => n !== 'all').map(network => {
     const data = analytics.filter(a => a.network === network);
+    const views = data.reduce((s, a) => s + a.views, 0);
+    const likes = data.reduce((s, a) => s + a.likes, 0);
+    const shares = data.reduce((s, a) => s + a.shares, 0);
+    const publications = data.reduce((s, a) => s + (a.publications || 0), 0);
+    const comments = Math.floor(likes * 0.3);
     return {
       network: networkNames[network],
       shortName: network.toUpperCase(),
-      views: data.reduce((s, a) => s + a.views, 0),
-      likes: data.reduce((s, a) => s + a.likes, 0),
-      shares: data.reduce((s, a) => s + a.shares, 0),
-      publications: Math.floor(Math.random() * 30) + 5,
-      engagement: (Math.random() * 5 + 2).toFixed(1),
+      views,
+      likes,
+      shares,
+      publications,
+      engagement: views > 0 ? (((likes + shares + comments) / views) * 100).toFixed(1) : '0.0',
     };
   });
 
   const totalViews = filteredData.reduce((s, a) => s + a.views, 0);
   const totalLikes = filteredData.reduce((s, a) => s + a.likes, 0);
   const totalShares = filteredData.reduce((s, a) => s + a.shares, 0);
+  const totalPublications = filteredData.reduce((s, a) => s + (a.publications || 0), 0);
   const totalComments = Math.floor(totalLikes * 0.3);
   const engagementRate = totalViews > 0 ? (((totalLikes + totalShares + totalComments) / totalViews) * 100).toFixed(2) : '0';
 
@@ -68,6 +77,9 @@ export default function AnalyticsPage() {
   const last7Views = last7.reduce((s, d) => s + d.views, 0);
   const prev7Views = prev7.reduce((s, d) => s + d.views, 0);
   const viewsGrowth = prev7Views > 0 ? (((last7Views - prev7Views) / prev7Views) * 100).toFixed(1) : '0';
+  const last7Publications = last7.reduce((s, d) => s + d.publications, 0);
+  const prev7Publications = prev7.reduce((s, d) => s + d.publications, 0);
+  const publicationsGrowth = prev7Publications > 0 ? (((last7Publications - prev7Publications) / prev7Publications) * 100).toFixed(1) : '0';
 
   // Hourly distribution (simulated)
   const hourlyData = Array.from({ length: 24 }, (_, i) => ({
@@ -156,6 +168,16 @@ export default function AnalyticsPage() {
       impact: '+30% ' + (language === 'ru' ? 'репостов' : 'shares'),
       metric: 'shares',
     },
+    {
+      id: '7',
+      type: 'publications',
+      priority: 'high',
+      icon: Send,
+      title: language === 'ru' ? 'Увеличьте частоту публикаций' : 'Increase publication frequency',
+      description: language === 'ru' ? `За период ${totalPublications} публикаций. Регулярные публикации минимум 5 раз в неделю повышают охват на 40% и удерживают аудиторию.` : `${totalPublications} publications in this period. Regular posts at least 5 times a week increase reach by 40% and retain the audience.`,
+      impact: '+20% ' + (language === 'ru' ? 'публикаций' : 'publications'),
+      metric: 'publications',
+    },
   ];
 
   const priorityColors = {
@@ -190,10 +212,11 @@ export default function AnalyticsPage() {
             <button
               key={network}
               onClick={() => setSelectedNetwork(network)}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
                 selectedNetwork === network ? 'bg-blue-500 text-white' : 'bg-white border hover:border-blue-200'
               }`}
             >
+              {network !== 'all' && <SocialIcon id={network} size={14} mono={selectedNetwork === network} />}
               {networkNames[network]}
             </button>
           ))}
@@ -201,7 +224,15 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
+        <div className="bg-white rounded-xl p-5 border border-slate-100">
+          <div className="flex items-center gap-2 mb-2">
+            <Send size={18} className="text-indigo-500" />
+            <span className="text-sm text-slate-500">{t.publications}</span>
+          </div>
+          <p className="text-2xl font-bold text-slate-900">{totalPublications.toLocaleString()}</p>
+          <p className="text-xs text-green-600 flex items-center gap-1 mt-1"><ArrowUp size={12} /> +{publicationsGrowth}%</p>
+        </div>
         <div className="bg-white rounded-xl p-5 border border-slate-100">
           <div className="flex items-center gap-2 mb-2">
             <Eye size={18} className="text-blue-500" />
@@ -269,6 +300,7 @@ export default function AnalyticsPage() {
               <Tooltip />
               <Legend />
               <Area type="monotone" dataKey="views" fill="#3b82f6" fillOpacity={0.15} stroke="#3b82f6" strokeWidth={2} name={t.views} />
+              <Bar dataKey="publications" fill="#6366f1" radius={[4, 4, 0, 0]} name={t.publications} />
               <Bar dataKey="likes" fill="#ec4899" radius={[4, 4, 0, 0]} name={t.likes} />
               <Bar dataKey="shares" fill="#8b5cf6" radius={[4, 4, 0, 0]} name={t.shares} />
             </ComposedChart>
@@ -327,6 +359,7 @@ export default function AnalyticsPage() {
               <YAxis dataKey="shortName" type="category" tick={{ fontSize: 11 }} width={60} />
               <Tooltip />
               <Legend />
+              <Bar dataKey="publications" fill="#6366f1" name={t.publications} radius={[0, 4, 4, 0]} />
               <Bar dataKey="views" fill="#3b82f6" name={t.views} radius={[0, 4, 4, 0]} />
               <Bar dataKey="likes" fill="#ec4899" name={t.likes} radius={[0, 4, 4, 0]} />
             </BarChart>
@@ -379,15 +412,15 @@ export default function AnalyticsPage() {
             {networkStats.slice(0, 5).map((stat, i) => (
               <div key={i} className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg flex items-center justify-center shrink-0">
-                  <span className="text-xs font-bold text-blue-700">{stat.shortName}</span>
+                  <SocialIcon id={networks.find(n => networkNames[n] === stat.network) || 'vk'} size={20} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-sm font-medium text-slate-900 truncate">{stat.network}</span>
-                    <span className="text-xs text-emerald-600 font-medium">{stat.engagement}%</span>
+                    <span className="text-xs text-slate-500">{t.publications}: <span className="text-indigo-600 font-medium">{stat.publications}</span> · <span className="text-emerald-600 font-medium">{stat.engagement}%</span></span>
                   </div>
                   <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full" style={{ width: `${parseFloat(stat.engagement) * 15}%` }}></div>
+                    <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full" style={{ width: `${Math.min(100, parseFloat(stat.engagement) * 15)}%` }}></div>
                   </div>
                 </div>
               </div>
@@ -416,7 +449,12 @@ export default function AnalyticsPage() {
             <tbody>
               {networkStats.map((stat, i) => (
                 <tr key={i} className="border-t border-slate-50 hover:bg-slate-50">
-                  <td className="p-4 font-medium text-slate-900">{stat.network}</td>
+                  <td className="p-4 font-medium text-slate-900">
+                    <span className="flex items-center gap-2">
+                      <SocialIcon id={networks.find(n => networkNames[n] === stat.network) || 'vk'} size={18} />
+                      {stat.network}
+                    </span>
+                  </td>
                   <td className="p-4 text-slate-600">{stat.publications}</td>
                   <td className="p-4 text-slate-600">{stat.views.toLocaleString()}</td>
                   <td className="p-4 text-slate-600">{stat.likes.toLocaleString()}</td>
@@ -499,6 +537,7 @@ export default function AnalyticsPage() {
             <div className="flex-1">
               <p className="font-bold text-slate-900 text-sm">{language === 'ru' ? 'Прогноз при применении всех рекомендаций' : 'Forecast when applying all recommendations'}</p>
               <div className="flex flex-wrap gap-3 mt-1.5">
+                <span className="text-xs px-2 py-1 bg-indigo-50 text-indigo-700 rounded">+20% {language === 'ru' ? 'публикаций' : 'publications'}</span>
                 <span className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded">+45% {language === 'ru' ? 'просмотров' : 'views'}</span>
                 <span className="text-xs px-2 py-1 bg-pink-50 text-pink-700 rounded">+35% {language === 'ru' ? 'вовлечения' : 'engagement'}</span>
                 <span className="text-xs px-2 py-1 bg-purple-50 text-purple-700 rounded">+28% {language === 'ru' ? 'подписчиков' : 'followers'}</span>

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useStore } from './store/useStore';
 import useInactivityLogout from './components/useInactivityLogout';
 import Header from './components/Header';
@@ -17,8 +18,37 @@ import SettingsPage from './pages/SettingsPage';
 import LegalPage from './pages/LegalPage';
 
 function App() {
-  const { currentPage, currentUser } = useStore();
+  const { currentPage, currentUser, restoreSession, loadUserData, resetNetworkPublications, dataLoadedFor, processDuePosts } = useStore();
   useInactivityLogout();
+
+  // Restore login + saved posts/analytics after refresh
+  useEffect(() => {
+    restoreSession();
+  }, []);
+
+  // Load saved data for current user; one-time zero of Telegram publications for a clean test baseline
+  useEffect(() => {
+    if (!currentUser?.id || dataLoadedFor === currentUser.id) return;
+    let cancelled = false;
+    (async () => {
+      await loadUserData();
+      if (cancelled) return;
+      if (!localStorage.getItem('blogpost_tg_pub_reset_v1')) {
+        resetNetworkPublications('telegram');
+        localStorage.setItem('blogpost_tg_pub_reset_v1', '1');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentUser?.id, dataLoadedFor]);
+
+  // Auto-publish scheduler: check queue every 30s
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const tick = () => { void processDuePosts(); };
+    tick();
+    const id = window.setInterval(tick, 30_000);
+    return () => window.clearInterval(id);
+  }, [currentUser?.id]);
 
   const renderPage = () => {
     switch (currentPage) {

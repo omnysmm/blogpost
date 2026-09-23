@@ -164,6 +164,7 @@ CREATE TABLE analytics (
   views INTEGER DEFAULT 0,
   likes INTEGER DEFAULT 0,
   shares INTEGER DEFAULT 0,
+  publications INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

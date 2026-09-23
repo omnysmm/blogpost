@@ -14,17 +14,32 @@ export interface User {
   avatar?: string;
 }
 
+export type PostStatus =
+  | 'draft'
+  | 'generating'
+  | 'ready'
+  | 'queued'
+  | 'moderating'
+  | 'scheduled'
+  | 'published'
+  | 'rejected';
+
 export interface Post {
   id: string;
   title: string;
   content: string;
   topic: string;
   type: 'post' | 'article' | 'video' | 'music';
-  status: 'draft' | 'generating' | 'ready' | 'published' | 'moderating';
+  status: PostStatus;
   createdAt: string;
   publishedAt?: string;
   socialNetworks: string[];
   scheduledAt?: string;
+  /** Multiple calendar dates (YYYY-MM-DD) for recurring auto-publish */
+  scheduledDates?: string[];
+  /** HH:MM time used with scheduledDates */
+  scheduledTime?: string;
+  moderationNote?: string;
   hasAudio: boolean;
   hasVideo: boolean;
   hasImage: boolean;
@@ -51,5 +66,6 @@ export interface Analytics {
   views: number;
   likes: number;
   shares: number;
+  publications: number;
   network: string;
 }

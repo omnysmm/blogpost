@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
-import { FileText, Video, Music, Image, Eye, Heart, Share2, Clock, TrendingUp, Megaphone, BarChart3, Zap, MessageSquare, ArrowUp, Users, Target, Award, Calendar, Lightbulb, Sparkles, CheckCircle2 } from 'lucide-react';
+import { FileText, Video, Music, Image, Eye, Heart, Share2, Clock, TrendingUp, Megaphone, BarChart3, Zap, MessageSquare, ArrowUp, Users, Target, Award, Calendar, Lightbulb, Sparkles, CheckCircle2, Send } from 'lucide-react';
+import SocialIcon from '../components/SocialIcon';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar, Legend, LineChart, Line,
@@ -10,16 +11,19 @@ import {
 } from 'recharts';
 
 export default function DashboardPage() {
-  const { language, currentUser, posts, analytics, setCurrentPage, loadAnalytics } = useStore();
+  const { language, currentUser, posts, analytics, setCurrentPage, loadAnalytics, loadPosts } = useStore();
   const t = translations[language];
   const [period, setPeriod] = useState('30');
   const [selectedNetwork, setSelectedNetwork] = useState('all');
   const [activeChart, setActiveChart] = useState<'views' | 'engagement' | 'growth'>('views');
 
-  useEffect(() => { loadAnalytics(parseInt(period)); }, [period]);
+  useEffect(() => {
+    loadPosts();
+    loadAnalytics(parseInt(period));
+  }, [period]);
 
-  const networks = ['all', 'vk', 'telegram', 'youtube', 'instagram', 'tiktok', 'ok'];
-  const networkNames: Record<string, string> = { all: language === 'ru' ? 'Все' : 'All', vk: 'VKontakte', telegram: 'Telegram', youtube: 'YouTube', instagram: 'Instagram', tiktok: 'TikTok', ok: 'OK' };
+  const networks = ['all', 'vk', 'telegram', 'youtube', 'instagram', 'tiktok', 'ok', 'rutube'];
+  const networkNames: Record<string, string> = { all: language === 'ru' ? 'Все' : 'All', vk: 'VK', telegram: 'Telegram', youtube: 'YouTube', instagram: 'Instagram', tiktok: 'TikTok', ok: 'ОК', rutube: 'Rutube' };
 
   const filteredData = analytics.filter(a => selectedNetwork === 'all' || a.network === selectedNetwork);
 
@@ -29,12 +33,13 @@ export default function DashboardPage() {
       existing.views += item.views;
       existing.likes += item.likes;
       existing.shares += item.shares;
+      existing.publications += item.publications || 0;
       existing.comments += Math.floor(item.likes * 0.3);
     } else {
-      acc.push({ date: item.date, views: item.views, likes: item.likes, shares: item.shares, comments: Math.floor(item.likes * 0.3) });
+      acc.push({ date: item.date, views: item.views, likes: item.likes, shares: item.shares, publications: item.publications || 0, comments: Math.floor(item.likes * 0.3) });
     }
     return acc;
-  }, [] as { date: string; views: number; likes: number; shares: number; comments: number }[]).sort((a, b) => a.date.localeCompare(b.date));
+  }, [] as { date: string; views: number; likes: number; shares: number; publications: number; comments: number }[]).sort((a, b) => a.date.localeCompare(b.date));
 
   const networkStats = networks.filter(n => n !== 'all').map(network => {
     const data = analytics.filter(a => a.network === network);
@@ -44,12 +49,14 @@ export default function DashboardPage() {
       views: data.reduce((s, a) => s + a.views, 0),
       likes: data.reduce((s, a) => s + a.likes, 0),
       shares: data.reduce((s, a) => s + a.shares, 0),
+      publications: data.reduce((s, a) => s + (a.publications || 0), 0),
     };
   });
 
   const totalViews = filteredData.reduce((s, a) => s + a.views, 0);
   const totalLikes = filteredData.reduce((s, a) => s + a.likes, 0);
   const totalShares = filteredData.reduce((s, a) => s + a.shares, 0);
+  const totalPublications = filteredData.reduce((s, a) => s + (a.publications || 0), 0);
   const totalComments = Math.floor(totalLikes * 0.3);
   const engagementRate = totalViews > 0 ? (((totalLikes + totalShares + totalComments) / totalViews) * 100).toFixed(2) : '0';
 
@@ -58,6 +65,9 @@ export default function DashboardPage() {
   const last7Views = last7.reduce((s, d) => s + d.views, 0);
   const prev7Views = prev7.reduce((s, d) => s + d.views, 0);
   const viewsGrowth = prev7Views > 0 ? (((last7Views - prev7Views) / prev7Views) * 100).toFixed(1) : '0';
+  const last7Publications = last7.reduce((s, d) => s + d.publications, 0);
+  const prev7Publications = prev7.reduce((s, d) => s + d.publications, 0);
+  const publicationsGrowth = prev7Publications > 0 ? (((last7Publications - prev7Publications) / prev7Publications) * 100).toFixed(1) : '0';
 
   const hourlyData = Array.from({ length: 24 }, (_, i) => ({
     hour: `${i}:00`,
@@ -137,7 +147,8 @@ export default function DashboardPage() {
         <div className="flex flex-wrap gap-1">
           {networks.map(network => (
             <button key={network} onClick={() => setSelectedNetwork(network)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${selectedNetwork === network ? 'bg-blue-500 text-white' : 'bg-white border border-slate-100 hover:border-blue-200 text-slate-600'}`}>
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5 ${selectedNetwork === network ? 'bg-blue-500 text-white' : 'bg-white border border-slate-100 hover:border-blue-200 text-slate-600'}`}>
+              {network !== 'all' && <SocialIcon id={network} size={14} mono={selectedNetwork === network} />}
               {networkNames[network]}
             </button>
           ))}
@@ -145,7 +156,12 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
+        <div className="bg-white rounded-xl p-4 border border-slate-100">
+          <div className="flex items-center gap-2 mb-1"><Send size={16} className="text-indigo-500" /><span className="text-xs text-slate-500">{t.publications}</span></div>
+          <p className="text-xl font-bold text-slate-900">{totalPublications.toLocaleString()}</p>
+          <p className="text-xs text-green-600 flex items-center gap-1"><ArrowUp size={10} /> +{publicationsGrowth}%</p>
+        </div>
         <div className="bg-white rounded-xl p-4 border border-slate-100">
           <div className="flex items-center gap-2 mb-1"><Eye size={16} className="text-blue-500" /><span className="text-xs text-slate-500">{t.views}</span></div>
           <p className="text-xl font-bold text-slate-900">{totalViews.toLocaleString()}</p>
@@ -193,6 +209,7 @@ export default function DashboardPage() {
               <YAxis tick={{ fontSize: 11 }} />
               <Tooltip /><Legend />
               <Area type="monotone" dataKey="views" fill="#3b82f6" fillOpacity={0.15} stroke="#3b82f6" strokeWidth={2} name={t.views} />
+              <Bar dataKey="publications" fill="#6366f1" radius={[4, 4, 0, 0]} name={t.publications} />
               <Bar dataKey="likes" fill="#ec4899" radius={[4, 4, 0, 0]} name={t.likes} />
               <Bar dataKey="shares" fill="#8b5cf6" radius={[4, 4, 0, 0]} name={t.shares} />
             </ComposedChart>
@@ -246,6 +263,7 @@ export default function DashboardPage() {
               <XAxis type="number" tick={{ fontSize: 11 }} />
               <YAxis dataKey="shortName" type="category" tick={{ fontSize: 11 }} width={60} />
               <Tooltip /><Legend />
+              <Bar dataKey="publications" fill="#6366f1" name={t.publications} radius={[0, 4, 4, 0]} />
               <Bar dataKey="views" fill="#3b82f6" name={t.views} radius={[0, 4, 4, 0]} />
               <Bar dataKey="likes" fill="#ec4899" name={t.likes} radius={[0, 4, 4, 0]} />
             </BarChart>
@@ -294,8 +312,12 @@ export default function DashboardPage() {
           <div className="space-y-3">
             {networkStats.slice(0, 5).map((stat, i) => (
               <div key={i} className="flex items-center justify-between">
-                <span className="text-sm text-slate-600">{stat.shortName}</span>
+                <span className="text-sm text-slate-600 flex items-center gap-1.5">
+                  <SocialIcon id={networks.find(n => networkNames[n] === stat.network) || 'vk'} size={14} />
+                  {stat.shortName}
+                </span>
                 <div className="flex items-center gap-4 text-sm">
+                  <span className="text-indigo-600 font-medium">{stat.publications.toLocaleString()}</span>
                   <span className="text-slate-900 font-medium">{stat.views.toLocaleString()}</span>
                   <span className="text-pink-600">{stat.likes.toLocaleString()}</span>
                   <span className="text-purple-600">{stat.shares.toLocaleString()}</span>
@@ -316,6 +338,7 @@ export default function DashboardPage() {
             <thead className="bg-slate-50">
               <tr>
                 <th className="text-left p-4 text-sm font-medium text-slate-600">{language === 'ru' ? 'Соцсеть' : 'Network'}</th>
+                <th className="text-left p-4 text-sm font-medium text-slate-600">{t.publications}</th>
                 <th className="text-left p-4 text-sm font-medium text-slate-600">{t.views}</th>
                 <th className="text-left p-4 text-sm font-medium text-slate-600">{t.likes}</th>
                 <th className="text-left p-4 text-sm font-medium text-slate-600">{t.shares}</th>
@@ -324,7 +347,13 @@ export default function DashboardPage() {
             <tbody>
               {networkStats.map((stat, i) => (
                 <tr key={i} className="border-t border-slate-50 hover:bg-slate-50">
-                  <td className="p-4 font-medium text-slate-900">{stat.network}</td>
+                  <td className="p-4 font-medium text-slate-900">
+                    <span className="flex items-center gap-2">
+                      <SocialIcon id={networks.find(n => networkNames[n] === stat.network) || 'vk'} size={18} />
+                      {stat.network}
+                    </span>
+                  </td>
+                  <td className="p-4 text-slate-600">{stat.publications.toLocaleString()}</td>
                   <td className="p-4 text-slate-600">{stat.views.toLocaleString()}</td>
                   <td className="p-4 text-slate-600">{stat.likes.toLocaleString()}</td>
                   <td className="p-4 text-slate-600">{stat.shares.toLocaleString()}</td>
@@ -344,6 +373,7 @@ export default function DashboardPage() {
           { id: '4', priority: 'medium', icon: Users, title: language === 'ru' ? 'Расширьте GEO-таргетинг' : 'Expand GEO targeting', description: language === 'ru' ? 'GEO-показатель 68/100. Добавьте региональные хештеги.' : 'GEO score 68/100. Add regional hashtags.', impact: '+22% ' + (language === 'ru' ? 'подписчиков' : 'followers') },
           { id: '5', priority: 'medium', icon: FileText, title: language === 'ru' ? 'Используйте длинные статьи' : 'Use long-form articles', description: language === 'ru' ? 'Статьи от 1500 слов получают в 2.5 раза больше репостов.' : 'Articles over 1500 words get 2.5x more shares.', impact: '+30% ' + (language === 'ru' ? 'репостов' : 'shares') },
           { id: '6', priority: 'low', icon: MessageSquare, title: language === 'ru' ? 'Увеличьте взаимодействие' : 'Increase interaction', description: language === 'ru' ? 'Отвечайте на комментарии в первый час — это повышает вовлечённость на 40%.' : 'Reply to comments within the first hour — increases engagement by 40%.', impact: '+40% ' + (language === 'ru' ? 'комментариев' : 'comments') },
+          { id: '7', priority: 'high', icon: Send, title: language === 'ru' ? 'Увеличьте частоту публикаций' : 'Increase publication frequency', description: language === 'ru' ? `За период ${totalPublications} публикаций. Публикуйте минимум 5 раз в неделю — регулярный контент повышает охват на 40%.` : `${totalPublications} publications in period. Publish at least 5 times a week — regular content boosts reach by 40%.`, impact: '+20% ' + (language === 'ru' ? 'публикаций' : 'publications') },
         ];
         const priorityColors: Record<string, string> = { high: 'bg-red-50 border-red-200 text-red-700', medium: 'bg-amber-50 border-amber-200 text-amber-700', low: 'bg-blue-50 border-blue-200 text-blue-700' };
         const priorityLabels: Record<string, string> = { high: language === 'ru' ? 'Высокий' : 'High', medium: language === 'ru' ? 'Средний' : 'Medium', low: language === 'ru' ? 'Низкий' : 'Low' };
@@ -406,6 +436,7 @@ export default function DashboardPage() {
                 <div className="flex-1">
                   <p className="font-bold text-slate-900 text-sm">{language === 'ru' ? 'Прогноз при применении всех рекомендаций' : 'Forecast when applying all recommendations'}</p>
                   <div className="flex flex-wrap gap-3 mt-1.5">
+                    <span className="text-xs px-2 py-1 bg-indigo-50 text-indigo-700 rounded">+20% {language === 'ru' ? 'публикаций' : 'publications'}</span>
                     <span className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded">+45% {language === 'ru' ? 'просмотров' : 'views'}</span>
                     <span className="text-xs px-2 py-1 bg-pink-50 text-pink-700 rounded">+35% {language === 'ru' ? 'вовлечения' : 'engagement'}</span>
                     <span className="text-xs px-2 py-1 bg-purple-50 text-purple-700 rounded">+28% {language === 'ru' ? 'подписчиков' : 'followers'}</span>

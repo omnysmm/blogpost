@@ -8,6 +8,7 @@ import {
   AlertCircle, ChevronRight, RefreshCw, X, CheckCircle2,
   HelpCircle, ExternalLink, Copy
 } from 'lucide-react';
+import SocialIcon from '../components/SocialIcon';
 
 type SettingsTab = 'social' | 'schedule' | 'payment' | 'plans';
 
@@ -57,18 +58,28 @@ export default function SettingsPage() {
 
   // ===== SOCIAL NETWORKS =====
   const defaultSocials: SocialConnection[] = [
-    { id: '1', network: 'vk', name: 'VKontakte', emoji: '🔵', color: 'from-blue-500 to-blue-600', connected: false, method: null, autoPublish: false },
+    { id: '1', network: 'vk', name: 'VK', emoji: '🔵', color: 'from-blue-500 to-blue-600', connected: false, method: null, autoPublish: false },
     { id: '2', network: 'telegram', name: 'Telegram', emoji: '📨', color: 'from-sky-500 to-sky-600', connected: false, method: null, autoPublish: false },
     { id: '3', network: 'youtube', name: 'YouTube', emoji: '📺', color: 'from-red-500 to-red-600', connected: false, method: null, autoPublish: false },
     { id: '4', network: 'instagram', name: 'Instagram', emoji: '📷', color: 'from-pink-500 to-purple-500', connected: false, method: null, autoPublish: false },
     { id: '5', network: 'tiktok', name: 'TikTok', emoji: '🎵', color: 'from-slate-800 to-slate-900', connected: false, method: null, autoPublish: false },
-    { id: '6', network: 'ok', name: 'OK', emoji: '🟠', color: 'from-orange-500 to-orange-600', connected: false, method: null, autoPublish: false },
+    { id: '6', network: 'ok', name: 'ОК', emoji: '🟠', color: 'from-orange-500 to-orange-600', connected: false, method: null, autoPublish: false },
+    { id: '7', network: 'rutube', name: 'Rutube', emoji: '▶', color: 'from-teal-500 to-cyan-600', connected: false, method: null, autoPublish: false },
   ];
 
   const loadSocials = (): SocialConnection[] => {
     try {
       const saved = localStorage.getItem('blogpost_socials');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed: SocialConnection[] = JSON.parse(saved);
+        // Merge missing networks and fix display names (VK, ОК)
+        const missing = defaultSocials.filter(d => !parsed.some(p => p.network === d.network));
+        const renamed = parsed.map(p => {
+          const def = defaultSocials.find(d => d.network === p.network);
+          return def ? { ...p, name: def.name } : p;
+        });
+        return [...renamed, ...missing];
+      }
     } catch {}
     return defaultSocials;
   };
@@ -257,8 +268,8 @@ export default function SettingsPage() {
           {socials.map(social => (
             <div key={social.id} className="bg-white rounded-xl border border-slate-100 overflow-hidden">
               <div className="p-5 flex items-center gap-4">
-                <div className={`w-12 h-12 bg-gradient-to-br ${social.color} rounded-xl flex items-center justify-center text-2xl shrink-0`}>
-                  {social.emoji}
+                <div className="w-12 h-12 bg-white border border-slate-100 rounded-xl flex items-center justify-center shrink-0 shadow-sm">
+                  <SocialIcon id={social.network} size={28} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
@@ -1062,6 +1073,31 @@ export default function SettingsPage() {
                 </div>
                 <div className="border-t border-slate-100 pt-4 space-y-2">
                   <a href="https://api.ok.ru" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700"><ExternalLink size={14} /> OK API {language === 'ru' ? 'портал' : 'portal'}</a>
+                </div>
+              </>)}
+
+              {/* ═══ Rutube ═══ */}
+              {showHelpFor === 'rutube' && (<>
+                <div className="flex gap-4">
+                  <div className="w-10 h-10 bg-teal-500 rounded-full flex items-center justify-center text-white font-bold text-lg shrink-0">1</div>
+                  <div className="flex-1">
+                    <h4 className="font-bold text-slate-900 mb-2">{language === 'ru' ? 'Аккаунт Rutube' : 'Rutube account'}</h4>
+                    <p className="text-sm text-slate-600 mb-3">{language === 'ru' ? 'Войдите на rutube.ru и откройте раздел разработчика / OAuth.' : 'Sign in at rutube.ru and open the developer / OAuth section.'}</p>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <div className="w-10 h-10 bg-teal-500 rounded-full flex items-center justify-center text-white font-bold text-lg shrink-0">2</div>
+                  <div className="flex-1">
+                    <h4 className="font-bold text-slate-900 mb-2">{language === 'ru' ? 'Получите OAuth-токен' : 'Get OAuth token'}</h4>
+                    <p className="text-sm text-slate-600 mb-3">{language === 'ru' ? 'Создайте приложение, скопируйте Access Token и вставьте в поле «API Key».' : 'Create an app, copy Access Token and paste it into the «API Key» field.'}</p>
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                      <p className="text-xs text-amber-700">{language === 'ru' ? 'Используйте токен с правами на загрузку видео и публикацию постов.' : 'Use a token with video upload and post publishing permissions.'}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="border-t border-slate-100 pt-4 space-y-2">
+                  <a href="https://rutube.ru/auth" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700"><ExternalLink size={14} /> Rutube {language === 'ru' ? 'вход / OAuth' : 'auth / OAuth'}</a>
+                  <a href="https://rutube.ru" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700"><ExternalLink size={14} /> Rutube</a>
                 </div>
               </>)}
 

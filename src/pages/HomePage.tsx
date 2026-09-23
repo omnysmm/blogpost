@@ -8,6 +8,7 @@ import {
   Music, Image, FileText, Mic, Target, Rocket, Star, ChevronRight,
   Play, Eye, Heart, Repeat2, Smartphone, Monitor, Tablet, MessageSquare, Upload
 } from 'lucide-react';
+import SocialIcon from '../components/SocialIcon';
 
 export default function HomePage() {
   const { language, currency, currentUser, setCurrentPage } = useStore();
@@ -57,7 +58,7 @@ export default function HomePage() {
   // ─── Solution Features ───
   const features = [
     { icon: Wand2, title: language === 'ru' ? 'AI-генерация контента' : 'AI Content Generation', desc: language === 'ru' ? 'Посты, статьи, сценарии видео и музыка — создаются десятками нейросетей за секунды' : 'Posts, articles, video scripts and music — created by dozens of neural networks in seconds', color: 'from-blue-500 to-indigo-600' },
-    { icon: Share2, title: language === 'ru' ? 'Публикация в разные соцсети' : 'Publish to different social networks', desc: language === 'ru' ? 'VK, Telegram, YouTube, Instagram, TikTok, OK — один клик или расписание на неделю вперёд' : 'VK, Telegram, YouTube, Instagram, TikTok, OK — one click or schedule a week ahead', color: 'from-cyan-500 to-blue-500' },
+    { icon: Share2, title: language === 'ru' ? 'Публикация в разные соцсети' : 'Publish to different social networks', desc: language === 'ru' ? 'VK, Telegram, YouTube, Instagram, TikTok, OK, Rutube — один клик или расписание на неделю вперёд' : 'VK, Telegram, YouTube, Instagram, TikTok, OK, Rutube — one click or schedule a week ahead', color: 'from-cyan-500 to-blue-500' },
     { icon: BarChart3, title: language === 'ru' ? 'Единая аналитика' : 'Unified analytics', desc: language === 'ru' ? 'Все метрики в одном дашборде: просмотры, лайки, репосты, конверсии по каждой соцсети' : 'All metrics in one dashboard: views, likes, shares, conversions per social network', color: 'from-purple-500 to-pink-500' },
     { icon: Video, title: language === 'ru' ? 'Генерация видео' : 'Video generation', desc: language === 'ru' ? 'AI создаёт видеоролики, добавляет озвучку Silero TTS, субтитры и музыкальное сопровождение' : 'AI creates videos, adds Silero TTS voiceover, subtitles and background music', color: 'from-rose-500 to-red-500' },
     { icon: Shield, title: language === 'ru' ? 'Автомодерация' : 'Auto moderation', desc: language === 'ru' ? 'Контент автоматически проверяется на соответствие законодательству РФ перед публикацией' : 'Content is automatically checked for compliance with Russian law before publishing', color: 'from-emerald-500 to-green-500' },
@@ -146,13 +147,13 @@ export default function HomePage() {
 
   // ─── Social Networks ───
   const socialNetworks = [
-    { name: 'VKontakte', abbr: 'VK', color: 'from-blue-500 to-blue-600', users: '100M+' },
-    { name: 'Telegram', abbr: 'TG', color: 'from-cyan-400 to-sky-500', users: '900M+' },
-    { name: 'YouTube', abbr: 'YT', color: 'from-red-500 to-rose-600', users: '2.5B+' },
-    { name: 'Instagram', abbr: 'IG', color: 'from-pink-500 to-fuchsia-500', users: '2B+' },
-    { name: 'TikTok', abbr: 'TK', color: 'from-slate-700 to-slate-900', users: '1.5B+' },
-    { name: 'Одноклассники', abbr: 'OK', color: 'from-orange-400 to-amber-500', users: '40M+' },
-    { name: 'Rutube', abbr: 'RT', color: 'from-teal-500 to-cyan-600', users: '50M+' },
+    { id: 'vk', name: 'VK', abbr: 'VK', color: 'from-blue-500 to-blue-600', users: '100M+' },
+    { id: 'telegram', name: 'Telegram', abbr: 'TG', color: 'from-cyan-400 to-sky-500', users: '900M+' },
+    { id: 'youtube', name: 'YouTube', abbr: 'YT', color: 'from-red-500 to-rose-600', users: '2.5B+' },
+    { id: 'instagram', name: 'Instagram', abbr: 'IG', color: 'from-pink-500 to-fuchsia-500', users: '2B+' },
+    { id: 'tiktok', name: 'TikTok', abbr: 'TK', color: 'from-slate-700 to-slate-900', users: '1.5B+' },
+    { id: 'ok', name: 'ОК', abbr: 'ОК', color: 'from-orange-400 to-amber-500', users: '40M+' },
+    { id: 'rutube', name: 'Rutube', abbr: 'RT', color: 'from-teal-500 to-cyan-600', users: '50M+' },
   ];
 
   // ─── Stats ───
@@ -160,7 +161,7 @@ export default function HomePage() {
     { value: '50K+', label: language === 'ru' ? 'блогеров' : 'bloggers' },
     { value: '2.4M', label: language === 'ru' ? 'постов создано' : 'posts created' },
     { value: '30 сек', label: language === 'ru' ? 'среднее время генерации' : 'avg generation time' },
-    { value: '6+', label: language === 'ru' ? 'соцсетей' : 'social networks' },
+    { value: '7+', label: language === 'ru' ? 'соцсетей' : 'social networks' },
   ];
 
   return (
@@ -496,8 +497,8 @@ export default function HomePage() {
                 className={`bg-white rounded-2xl p-5 border border-slate-100 text-center hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-default group ${isVisible('social') ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
                 style={{ transitionDelay: `${i * 80}ms` }}
               >
-                <div className={`w-14 h-14 bg-gradient-to-br ${net.color} rounded-xl flex items-center justify-center mx-auto mb-3 shadow-lg group-hover:scale-110 transition-transform`}>
-                  <span className="text-white font-bold text-sm">{net.abbr}</span>
+                <div className={`w-14 h-14 bg-white border border-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3 shadow-lg group-hover:scale-110 transition-transform`}>
+                  <SocialIcon id={net.id} size={30} />
                 </div>
                 <p className="font-semibold text-slate-900 text-sm">{net.name}</p>
                 <p className="text-slate-500 text-xs mt-1">{net.users}</p>
