@@ -12,6 +12,7 @@ import CalendarPicker from '../components/CalendarPicker';
 import EditPostModal from '../components/EditPostModal';
 import { generateText, generateImage as aiGenerateImage, generateAudio, checkGenerationLimit } from '../services/ai';
 import { buildImagePrompt } from '../services/contentEngine';
+import { loadGeneratorPrefs, saveGeneratorPrefs } from '../services/persistence';
 import { publishToTelegram } from '../services/telegram';
 import { getDueIso } from '../services/scheduler';
 import type { Post } from '../store/types';
@@ -133,8 +134,46 @@ export default function ContentGeneratorPage() {
 
   useEffect(() => {
     loadAutoTasks();
+    // Restore generator prefs (content type, mode, model, options, networks)
+    if (currentUser?.id) {
+      const prefs = loadGeneratorPrefs(currentUser.id);
+      if (prefs.contentType) setContentType(prefs.contentType as ContentKind);
+      if (prefs.mode) setMode(prefs.mode);
+      if (prefs.selectedModel) setSelectedModel(prefs.selectedModel);
+      if (typeof prefs.generateAudioOpt === 'boolean') setGenerateAudioOpt(prefs.generateAudioOpt);
+      if (typeof prefs.generateVideoOpt === 'boolean') setGenerateVideoOpt(prefs.generateVideoOpt);
+      if (typeof prefs.generateImageOpt === 'boolean') setGenerateImageOpt(prefs.generateImageOpt);
+      if (typeof prefs.seoEnabled === 'boolean') setSeoEnabled(prefs.seoEnabled);
+      if (typeof prefs.geoEnabled === 'boolean') setGeoEnabled(prefs.geoEnabled);
+      if (typeof prefs.moderation === 'boolean') setModeration(prefs.moderation);
+      if (typeof prefs.includeAd === 'boolean') setIncludeAd(prefs.includeAd);
+      if (prefs.adPosition) setAdPosition(prefs.adPosition);
+      if (Array.isArray(prefs.selectedNetworks)) {
+        const connected = loadConnectedNetworks();
+        setSelectedNetworks(prefs.selectedNetworks.filter(n => connected[n]));
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id]);
+
+  // Persist generator prefs per user (survive refresh / re-login)
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    saveGeneratorPrefs(currentUser.id, {
+      contentType,
+      mode,
+      selectedModel,
+      generateAudioOpt,
+      generateVideoOpt,
+      generateImageOpt,
+      seoEnabled,
+      geoEnabled,
+      moderation,
+      includeAd,
+      adPosition,
+      selectedNetworks,
+    });
+  }, [currentUser?.id, contentType, mode, selectedModel, generateAudioOpt, generateVideoOpt, generateImageOpt, seoEnabled, geoEnabled, moderation, includeAd, adPosition, selectedNetworks]);
 
   // Refresh connection status when page mounts / socials change
   useEffect(() => {
@@ -320,9 +359,23 @@ export default function ContentGeneratorPage() {
     }
   };
 
+  /** Text of the active content block (the one the user fills). */
+  const getActiveBody = (): string => {
+    if (contentType === 'video') return videoScript || (mode === 'auto' ? generatedHtml : '');
+    if (contentType === 'music') return musicLyrics || (mode === 'auto' ? generatedHtml : '');
+    if (contentType === 'voiceover') return voiceText || (mode === 'auto' ? generatedHtml : '');
+    if (contentType === 'editing') return editNotes || (mode === 'auto' ? generatedHtml : '');
+    return generatedHtml;
+  };
+
+  /** Plain text length of the active block must be at least 3 chars to enable Publish. */
+  const activeBodyText = htmlToPlain(getActiveBody()).trim();
+  const canPublish = activeBodyText.length >= 3 && selectedNetworks.length > 0;
+  const canSchedule = activeBodyText.length >= 3;
+
   const handleManualSave = (): string | null => {
-    const body = generatedHtml || videoScript || musicLyrics || editNotes || voiceText;
-    if (!body && !uploadedImage) return currentPostId;
+    const body = getActiveBody();
+    if (htmlToPlain(body).trim().length < 3 && !uploadedImage) return currentPostId;
     const id = currentPostId || Date.now().toString();
     const image = uploadedImage || generatedImage;
     const contentHtml = image
@@ -366,8 +419,9 @@ export default function ContentGeneratorPage() {
   };
 
   const handlePublish = async () => {
-    const body = generatedHtml || videoScript || musicLyrics || editNotes || voiceText;
-    if (!body || selectedNetworks.length === 0) return;
+    const body = getActiveBody();
+    const bodyText = htmlToPlain(body).trim();
+    if (bodyText.length < 3 || selectedNetworks.length === 0) return;
     setPublishStatus(null);
 
     const successfulNetworks: string[] = [];
@@ -474,6 +528,7 @@ export default function ContentGeneratorPage() {
   };
 
   /** Clear topic + generated result after successful publish/schedule. */
+  /** Clear topic + generated result after successful publish/schedule. Keeps user prefs (type, mode, model, options, networks). */
   const clearGeneratorForm = () => {
     setTopic('');
     setUserPrompt('');
@@ -486,15 +541,14 @@ export default function ContentGeneratorPage() {
     setMusicLyrics('');
     setEditNotes('');
     setCurrentPostId(null);
-    setSelectedNetworks([]);
     setScheduleDays([]);
     setScheduleDate('');
     setGenStatus(null);
   };
 
   const handleSchedule = () => {
-    const body = generatedHtml || videoScript || musicLyrics || editNotes || voiceText;
-    if (!body && !uploadedImage) return;
+    const body = getActiveBody();
+    if (htmlToPlain(body).trim().length < 3 && !uploadedImage) return;
     if (!scheduleDays.length && !scheduleDate) {
       setPublishStatus({
         type: 'error',
@@ -548,7 +602,7 @@ export default function ContentGeneratorPage() {
     .filter(p => p.status === 'published')
     .sort((a, b) => (b.publishedAt || b.createdAt).localeCompare(a.publishedAt || a.createdAt));
 
-  const VISIBLE_LIMIT = 5;
+  const VISIBLE_LIMIT = 3;
   const visibleQueue = showQueueAll ? queuePosts : queuePosts.slice(0, VISIBLE_LIMIT);
   const visibleArchive = showArchiveAll ? archivePosts : archivePosts.slice(0, VISIBLE_LIMIT);
   const hiddenQueueCount = Math.max(0, queuePosts.length - visibleQueue.length);
@@ -1067,7 +1121,7 @@ export default function ContentGeneratorPage() {
                   <button
                     type="button"
                     onClick={handleSchedule}
-                    disabled={!(generatedHtml || voiceText || videoScript || musicLyrics || editNotes) && !uploadedImage}
+                    disabled={!canSchedule}
                     className="w-full py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center justify-center gap-2"
                   >
                     <Clock size={14} /> {ru ? 'Добавить в очередь по расписанию' : 'Add to schedule queue'}
@@ -1075,14 +1129,17 @@ export default function ContentGeneratorPage() {
                 </div>
 
                 <div className="flex items-center justify-end gap-3">
-                  {selectedNetworks.length === 0 && (
+                  {!canPublish && (
                     <span className="text-xs text-slate-400">
-                      {ru ? 'Выберите хотя бы одну соцсеть' : 'Select at least one network'}
+                      {activeBodyText.length < 3
+                        ? (ru ? 'Введите текст (мин. 3 символа)' : 'Enter text (min 3 chars)')
+                        : (ru ? 'Выберите хотя бы одну соцсеть' : 'Select at least one network')}
                     </span>
                   )}
                   <button
                     onClick={async () => { handleManualSave(); await handlePublish(); }}
-                    disabled={(!(generatedHtml || voiceText || videoScript || musicLyrics || editNotes)) || selectedNetworks.length === 0}
+                    disabled={!canPublish}
+                    title={canPublish ? (ru ? 'Опубликовать' : 'Publish') : (ru ? 'Нужен текст от 3 символов' : 'Need at least 3 characters')}
                     className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium hover:shadow-lg transition disabled:opacity-50 flex items-center gap-2"
                   >
                     <Share2 size={18} /> {t.publishNow}

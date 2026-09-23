@@ -4,6 +4,41 @@ import type { Post, Analytics } from '../store/types';
 const postsKey = (userId: string) => `blogpost_posts_${userId}`;
 const analyticsKey = (userId: string) => `blogpost_analytics_${userId}`;
 const SESSION_USER_KEY = 'blogpost_session_user';
+const prefsKey = (userId: string) => `blogpost_generator_prefs_${userId}`;
+
+export interface GeneratorPrefs {
+  contentType?: string;
+  mode?: 'auto' | 'manual';
+  selectedModel?: string;
+  generateAudioOpt?: boolean;
+  generateVideoOpt?: boolean;
+  generateImageOpt?: boolean;
+  seoEnabled?: boolean;
+  geoEnabled?: boolean;
+  moderation?: boolean;
+  includeAd?: boolean;
+  adPosition?: string;
+  selectedNetworks?: string[];
+}
+
+export function loadGeneratorPrefs(userId: string): GeneratorPrefs {
+  try {
+    const raw = localStorage.getItem(prefsKey(userId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveGeneratorPrefs(userId: string, prefs: GeneratorPrefs): void {
+  try {
+    localStorage.setItem(prefsKey(userId), JSON.stringify(prefs));
+  } catch (e) {
+    console.error('saveGeneratorPrefs failed', e);
+  }
+}
 
 function safeParse<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
