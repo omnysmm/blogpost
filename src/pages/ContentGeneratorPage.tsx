@@ -4,7 +4,7 @@ import { translations } from '../i18n/translations';
 import {
   Wand2, FileText, Video, Music, Image, Mic, Film, Sparkles, Check, Loader2,
   Volume2, Globe, Shield, Clock, Calendar, Play, Pause, Trash2, Plus,
-  Share2, AlertCircle, Settings, Scissors, AudioLines, Edit3
+  Share2, AlertCircle, Settings, Scissors, AudioLines, Edit3, Crown
 } from 'lucide-react';
 import SocialIcon from '../components/SocialIcon';
 import RichTextEditor from '../components/RichTextEditor';
@@ -17,15 +17,26 @@ import { publishToTelegram } from '../services/telegram';
 import { getDueIso } from '../services/scheduler';
 import type { Post } from '../store/types';
 
-const aiModels = [
-  { id: 'yandexgpt', name: 'YandexGPT', type: 'text', free: true },
-  { id: 'gigachat', name: 'GigaChat', type: 'text', free: true },
-  { id: 'gpt2ru', name: 'GPT-2 Russian', type: 'text', free: true },
-  { id: 'kandinsky', name: 'Kandinsky', type: 'image', free: true },
-  { id: 'rudalle', name: 'RuDALL-E', type: 'image', free: true },
-  { id: 'silero', name: 'Silero TTS', type: 'audio', free: true },
-  { id: 'ruttsgan', name: 'RuTTS-GAN', type: 'audio', free: true },
-  { id: 'automl', name: 'AutoML Video', type: 'video', free: true },
+const standardAiModels = [
+  { id: 'yandexgpt', name: 'YandexGPT', type: 'text' },
+  { id: 'gigachat', name: 'GigaChat', type: 'text' },
+  { id: 'gpt2ru', name: 'GPT-2 Russian', type: 'text' },
+  { id: 'kandinsky', name: 'Kandinsky', type: 'image' },
+  { id: 'rudalle', name: 'RuDALL-E', type: 'image' },
+  { id: 'silero', name: 'Silero TTS', type: 'audio' },
+  { id: 'ruttsgan', name: 'RuTTS-GAN', type: 'audio' },
+  { id: 'automl', name: 'AutoML Video', type: 'video' },
+];
+
+const premiumAiModels = [
+  { id: 'gpt4o', name: 'GPT-4o', type: 'text' },
+  { id: 'claude', name: 'Claude Opus', type: 'text' },
+  { id: 'midjourney', name: 'Midjourney', type: 'image' },
+  { id: 'dalle3', name: 'DALL·E 3', type: 'image' },
+  { id: 'elevenlabs', name: 'ElevenLabs Voice', type: 'audio' },
+  { id: 'suno', name: 'Suno Music', type: 'audio' },
+  { id: 'runway', name: 'Runway Video', type: 'video' },
+  { id: 'pika', name: 'Pika Labs', type: 'video' },
 ];
 
 type ContentKind = 'post' | 'article' | 'video' | 'music' | 'voiceover' | 'editing';
@@ -82,6 +93,7 @@ export default function ContentGeneratorPage() {
   const [userPrompt, setUserPrompt] = useState('');
   const [mode, setMode] = useState<'auto' | 'manual'>('auto');
   const [selectedModel, setSelectedModel] = useState('auto');
+  const [selectedPremiumModel, setSelectedPremiumModel] = useState('');
   const [generateAudioOpt, setGenerateAudioOpt] = useState(false);
   const [generateVideoOpt, setGenerateVideoOpt] = useState(false);
   const [generateImageOpt, setGenerateImageOpt] = useState(true);
@@ -140,6 +152,7 @@ export default function ContentGeneratorPage() {
       if (prefs.contentType) setContentType(prefs.contentType as ContentKind);
       if (prefs.mode) setMode(prefs.mode);
       if (prefs.selectedModel) setSelectedModel(prefs.selectedModel);
+      if (prefs.selectedPremiumModel) setSelectedPremiumModel(prefs.selectedPremiumModel);
       if (typeof prefs.generateAudioOpt === 'boolean') setGenerateAudioOpt(prefs.generateAudioOpt);
       if (typeof prefs.generateVideoOpt === 'boolean') setGenerateVideoOpt(prefs.generateVideoOpt);
       if (typeof prefs.generateImageOpt === 'boolean') setGenerateImageOpt(prefs.generateImageOpt);
@@ -163,6 +176,7 @@ export default function ContentGeneratorPage() {
       contentType,
       mode,
       selectedModel,
+      selectedPremiumModel,
       generateAudioOpt,
       generateVideoOpt,
       generateImageOpt,
@@ -173,7 +187,7 @@ export default function ContentGeneratorPage() {
       adPosition,
       selectedNetworks,
     });
-  }, [currentUser?.id, contentType, mode, selectedModel, generateAudioOpt, generateVideoOpt, generateImageOpt, seoEnabled, geoEnabled, moderation, includeAd, adPosition, selectedNetworks]);
+  }, [currentUser?.id, contentType, mode, selectedModel, selectedPremiumModel, generateAudioOpt, generateVideoOpt, generateImageOpt, seoEnabled, geoEnabled, moderation, includeAd, adPosition, selectedNetworks]);
 
   // Refresh connection status when page mounts / socials change
   useEffect(() => {
@@ -191,6 +205,8 @@ export default function ContentGeneratorPage() {
 
   const isTextType = contentType === 'post' || contentType === 'article';
   const supportsImage = contentType === 'post' || contentType === 'article';
+  const isPremiumPlan = currentUser?.subscription === 'premium';
+  const activeAiModel = selectedPremiumModel || (selectedModel === 'auto' ? 'AutoML' : selectedModel);
 
   const buildPrompt = (kind: ContentKind, theme: string, extra = ''): string => {
     const base = ru
@@ -347,7 +363,7 @@ export default function ContentGeneratorPage() {
         hasAudio: contentType === 'voiceover' || generateAudioOpt,
         hasVideo: contentType === 'video' || contentType === 'editing' || generateVideoOpt,
         hasImage: !!generatedImage || !!uploadedImage,
-        aiModel: selectedModel === 'auto' ? 'AutoML' : selectedModel,
+        aiModel: activeAiModel,
         views: 0,
         likes: 0,
       });
@@ -405,7 +421,7 @@ export default function ContentGeneratorPage() {
         hasAudio: !!audioUrl,
         hasVideo: contentType === 'video' || contentType === 'editing',
         hasImage: !!image,
-        aiModel: selectedModel === 'auto' ? 'AutoML' : selectedModel,
+        aiModel: activeAiModel,
         views: 0,
         likes: 0,
       });
@@ -480,7 +496,7 @@ export default function ContentGeneratorPage() {
             hasAudio: !!audioUrl,
             hasVideo: contentType === 'video' || contentType === 'editing',
             hasImage: !!image,
-            aiModel: selectedModel === 'auto' ? 'AutoML' : selectedModel,
+            aiModel: activeAiModel,
             views: 0,
             likes: 0,
           });
@@ -623,6 +639,29 @@ export default function ContentGeneratorPage() {
     return <span className={`text-[10px] px-2 py-0.5 rounded-full border ${b.cls}`}>{b.label}</span>;
   };
 
+  const contentTypeLabel = (type: string) => {
+    const map: Record<string, string> = {
+      post: ru ? 'Пост' : 'Post',
+      article: ru ? 'Статья' : 'Article',
+      video: ru ? 'Видео' : 'Video',
+      music: ru ? 'Музыка' : 'Music',
+      voiceover: ru ? 'Озвучивание' : 'Voiceover',
+      editing: ru ? 'Монтаж' : 'Editing',
+    };
+    return map[type] || (ru ? 'Пост' : 'Post');
+  };
+
+  const formatDue = (iso: string | null) => {
+    if (!iso) return ru ? 'без расписания' : 'unscheduled';
+    return new Date(iso).toLocaleString(ru ? 'ru-RU' : 'en-US', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
   const canModerate = !!currentUser && (currentUser.role === 'admin' || currentUser.role === 'user');
 
   const frequencyLabels = {
@@ -718,19 +757,75 @@ export default function ContentGeneratorPage() {
             </div>
 
             {/* AI model */}
-            <div className="bg-white rounded-xl p-5 border border-slate-100">
-              <h3 className="font-bold text-slate-900 mb-3">{t.aiModel}</h3>
-              <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)} className="w-full p-3 border border-slate-200 rounded-lg text-sm">
-                <option value="auto">{ru ? '🤖 Автоматический выбор' : '🤖 Auto selection'}</option>
-                {aiModels.filter(m => {
-                  if (contentType === 'video' || contentType === 'editing') return m.type === 'video' || m.type === 'text';
-                  if (contentType === 'music') return m.type === 'audio' || m.type === 'text';
-                  if (contentType === 'voiceover') return m.type === 'audio' || m.type === 'text';
-                  return m.type === 'text' || m.type === 'image';
-                }).map(model => (
-                  <option key={model.id} value={model.id}>{model.name} {model.free ? '(Free)' : ''}</option>
-                ))}
-              </select>
+            <div className="bg-white rounded-xl p-5 border border-slate-100 space-y-3">
+              <h3 className="font-bold text-slate-900 mb-1">{t.aiModel}</h3>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{ru ? 'Стандарт' : 'Standard'}</label>
+                <select
+                  value={selectedPremiumModel ? 'auto' : selectedModel}
+                  onChange={e => {
+                    setSelectedModel(e.target.value);
+                    setSelectedPremiumModel('');
+                  }}
+                  className="w-full p-3 border border-slate-200 rounded-lg text-sm"
+                >
+                  <option value="auto">{ru ? '🤖 Автоматический выбор' : '🤖 Auto selection'}</option>
+                  {standardAiModels.filter(m => {
+                    if (contentType === 'video' || contentType === 'editing') return m.type === 'video' || m.type === 'text';
+                    if (contentType === 'music') return m.type === 'audio' || m.type === 'text';
+                    if (contentType === 'voiceover') return m.type === 'audio' || m.type === 'text';
+                    return m.type === 'text' || m.type === 'image';
+                  }).map(model => (
+                    <option key={model.id} value={model.id}>{model.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {isPremiumPlan ? (
+                <div>
+                  <label className="block text-xs font-medium text-amber-600 mb-1">
+                    {ru ? 'Премиум' : 'Premium'}
+                    <span className="ml-1 text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded-full">
+                      {ru ? 'Премиум-тариф' : 'Premium plan'}
+                    </span>
+                  </label>
+                  <select
+                    value={selectedPremiumModel}
+                    onChange={e => {
+                      setSelectedPremiumModel(e.target.value);
+                      if (e.target.value) setSelectedModel('auto');
+                    }}
+                    className="w-full p-3 border border-amber-200 bg-amber-50/40 rounded-lg text-sm"
+                  >
+                    <option value="">{ru ? '— Не использовать премиум —' : '— Don’t use premium —'}</option>
+                    {premiumAiModels.filter(m => {
+                      if (contentType === 'video' || contentType === 'editing') return m.type === 'video' || m.type === 'text';
+                      if (contentType === 'music') return m.type === 'audio' || m.type === 'text';
+                      if (contentType === 'voiceover') return m.type === 'audio' || m.type === 'text';
+                      return m.type === 'text' || m.type === 'image';
+                    }).map(model => (
+                      <option key={model.id} value={model.id}>{model.name}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-amber-200 bg-amber-50/40 p-3">
+                  <p className="text-xs text-amber-800 flex items-center gap-1.5">
+                    <Crown size={14} className="shrink-0" />
+                    {ru
+                      ? 'Премиум-нейросети (GPT-4o, Claude, Midjourney…) — на тарифе «Премиум».'
+                      : 'Premium AI (GPT-4o, Claude, Midjourney…) — on the Premium plan.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage('subscriptions')}
+                    className="mt-2 text-xs font-medium text-amber-700 hover:text-amber-900 underline"
+                  >
+                    {ru ? 'Смотреть тарифы' : 'View plans'}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Options */}
@@ -1185,8 +1280,7 @@ export default function ContentGeneratorPage() {
                               {statusBadge(p.status)}
                             </div>
                             <p className="text-xs text-slate-500 mt-1">
-                              {p.type}
-                              {due && <> • {ru ? 'следующая' : 'next'}: {new Date(due).toLocaleString(ru ? 'ru-RU' : 'en-US')}</>}
+                              <span className="font-medium text-slate-600">{contentTypeLabel(p.type)}</span>
                               {p.scheduledDates?.length ? <> • {ru ? 'дней' : 'days'}: {p.scheduledDates.length}</> : null}
                               {p.socialNetworks?.length ? <> • {p.socialNetworks.join(', ')}</> : null}
                             </p>
@@ -1239,6 +1333,17 @@ export default function ContentGeneratorPage() {
                             >
                               {expandedPost === p.id ? (ru ? 'Скрыть' : 'Hide') : (ru ? 'Ещё' : 'More')}
                             </button>
+                          </div>
+                        </div>
+
+                        {/* Bottom-left: scheduled publish date & time */}
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                            <Clock size={12} className="text-indigo-500" />
+                            <span>
+                              {ru ? 'Публикация:' : 'Publish at:'}{' '}
+                              <span className="font-medium text-slate-700">{formatDue(due)}</span>
+                            </span>
                           </div>
                         </div>
 

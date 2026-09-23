@@ -10,6 +10,7 @@ export interface GeneratorPrefs {
   contentType?: string;
   mode?: 'auto' | 'manual';
   selectedModel?: string;
+  selectedPremiumModel?: string;
   generateAudioOpt?: boolean;
   generateVideoOpt?: boolean;
   generateImageOpt?: boolean;

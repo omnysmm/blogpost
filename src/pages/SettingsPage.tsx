@@ -753,7 +753,7 @@ export default function SettingsPage() {
                 { id: 'free', name: language === 'ru' ? 'Бесплатный' : 'Free', price: 0, period: '48h', icon: Star, color: 'from-slate-400 to-slate-500', features: language === 'ru' ? ['10 постов', '2 соцсети', 'Базовая аналитика'] : ['10 posts', '2 networks', 'Basic analytics'] },
                 { id: 'basic', name: t.basicPlan, price: 990, icon: Zap, color: 'from-blue-500 to-blue-600', features: language === 'ru' ? ['50 постов/мес', '3 соцсети', 'Озвучка'] : ['50 posts/mo', '3 networks', 'Voiceover'] },
                 { id: 'pro', name: t.proPlan, price: 2990, icon: Crown, color: 'from-purple-500 to-purple-600', popular: true, features: language === 'ru' ? ['Безлимит', 'Все соцсети', 'Видео + SEO'] : ['Unlimited', 'All networks', 'Video + SEO'] },
-                { id: 'premium', name: t.premiumPlan, price: 7990, icon: Crown, color: 'from-amber-500 to-orange-600', features: language === 'ru' ? ['Всё из Pro', 'API', 'Менеджер'] : ['All from Pro', 'API', 'Manager'] },
+                { id: 'premium', name: t.premiumPlan, price: 7990, icon: Crown, color: 'from-amber-500 to-orange-600', features: language === 'ru' ? ['Всё из Pro', 'AI: Премиум-нейросети (GPT-4o, Claude, Midjourney)', 'API', 'Менеджер'] : ['All from Pro', 'AI: Premium neural nets (GPT-4o, Claude, Midjourney)', 'API', 'Manager'] },
               ].map(plan => (
                 <div key={plan.id} className={`bg-white rounded-xl border ${plan.popular ? 'border-purple-300 shadow-lg' : 'border-slate-100'} p-5 relative ${selectedPlan === plan.id ? 'ring-2 ring-blue-500' : ''}`}>
                   {plan.popular && (

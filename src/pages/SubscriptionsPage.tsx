@@ -42,8 +42,8 @@ export default function SubscriptionsPage() {
       color: 'from-slate-400 to-slate-500',
       desc: language === 'ru' ? 'Попробуйте все функции бесплатно' : 'Try all features for free',
       features: language === 'ru'
-        ? ['Полный доступ ко всем AI-моделям', 'Публикация во все соцсети', 'Базовая аналитика', 'AI-поддержка 24/7']
-        : ['Full access to all AI models', 'Publish to all social networks', 'Basic analytics', 'AI support 24/7'],
+        ? ['AI: Стандарт (бесплатные нейросети)', 'Публикация во все соцсети', 'Базовая аналитика', 'AI-поддержка 24/7']
+        : ['AI: Standard (free neural nets)', 'Publish to all social networks', 'Basic analytics', 'AI support 24/7'],
     },
     {
       id: 'basic',
@@ -53,8 +53,8 @@ export default function SubscriptionsPage() {
       color: 'from-blue-500 to-blue-600',
       desc: language === 'ru' ? 'Для начинающих блогеров' : 'For beginner bloggers',
       features: language === 'ru'
-        ? ['10 генераций статей в месяц', '2 соцсети на выбор', 'SEO-оптимизация', 'Планировщик публикаций']
-        : ['10 article generations per month', '2 social networks of choice', 'SEO optimization', 'Post scheduler'],
+        ? ['AI: Стандарт (бесплатные нейросети)', '10 генераций статей в месяц', '2 соцсети на выбор', 'SEO-оптимизация', 'Планировщик публикаций']
+        : ['AI: Standard (free neural nets)', '10 article generations per month', '2 social networks of choice', 'SEO optimization', 'Post scheduler'],
     },
     {
       id: 'pro',
@@ -65,8 +65,8 @@ export default function SubscriptionsPage() {
       popular: true,
       desc: language === 'ru' ? 'Для серьёзных создателей' : 'For serious creators',
       features: language === 'ru'
-        ? ['60 генераций в месяц', 'Публикация во все соцсети одновременно', 'Генерация видео и музыки', 'Полная аналитика + экспорт', 'Гео-таргетинг', 'Приоритетная поддержка']
-        : ['60 generations per month', 'Publish to all social networks simultaneously', 'Video and music generation', 'Full analytics + export', 'Geo targeting', 'Priority support'],
+        ? ['AI: Стандарт (бесплатные нейросети)', '60 генераций в месяц', 'Публикация во все соцсети одновременно', 'Генерация видео и музыки', 'Полная аналитика + экспорт', 'Гео-таргетинг', 'Приоритетная поддержка']
+        : ['AI: Standard (free neural nets)', '60 generations per month', 'Publish to all social networks simultaneously', 'Video and music generation', 'Full analytics + export', 'Geo targeting', 'Priority support'],
     },
     {
       id: 'premium',
@@ -76,8 +76,8 @@ export default function SubscriptionsPage() {
       color: 'from-amber-500 to-orange-500',
       desc: language === 'ru' ? 'Максимум возможностей' : 'Maximum capabilities',
       features: language === 'ru'
-        ? ['Безлимитные генерации', 'Публикация во все соцсети одновременно', 'API-доступ для интеграций', 'Персональный менеджер', 'White-label отчёты', 'Рекламный кабинет']
-        : ['Unlimited generations', 'Publish to all social networks simultaneously', 'API access for integrations', 'Personal manager', 'White-label reports', 'Ad cabinet'],
+        ? ['AI: Стандарт + Премиум-нейросети (GPT-4o, Claude, Midjourney, DALL·E 3, ElevenLabs, Suno, Runway)', 'Безлимитные генерации', 'Публикация во все соцсети одновременно', 'API-доступ для интеграций', 'Персональный менеджер', 'White-label отчёты', 'Рекламный кабинет']
+        : ['AI: Standard + Premium neural nets (GPT-4o, Claude, Midjourney, DALL·E 3, ElevenLabs, Suno, Runway)', 'Unlimited generations', 'Publish to all social networks simultaneously', 'API access for integrations', 'Personal manager', 'White-label reports', 'Ad cabinet'],
     },
   ];
 

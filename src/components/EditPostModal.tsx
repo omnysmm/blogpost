@@ -15,7 +15,6 @@ export default function EditPostModal({ post, language, onSave, onClose }: EditP
   const [title, setTitle] = useState(post.title || '');
   const [topic, setTopic] = useState(post.topic || '');
   const [html, setHtml] = useState(post.content || '');
-  const [scheduledTime, setScheduledTime] = useState(post.scheduledTime || '10:00');
   const [scheduledAt, setScheduledAt] = useState(post.scheduledAt ? post.scheduledAt.slice(0, 16) : '');
   const [saving, setSaving] = useState(false);
 
@@ -25,7 +24,6 @@ export default function EditPostModal({ post, language, onSave, onClose }: EditP
       title: title.trim() || post.title,
       topic: topic.trim() || post.topic,
       content: html,
-      scheduledTime,
     };
     if (scheduledAt) {
       updates.scheduledAt = new Date(scheduledAt).toISOString();
@@ -96,13 +94,8 @@ export default function EditPostModal({ post, language, onSave, onClose }: EditP
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">{ru ? 'Время для календарных дней' : 'Time for calendar days'}</label>
-              <input
-                type="time"
-                value={scheduledTime}
-                onChange={e => setScheduledTime(e.target.value)}
-                className="w-full p-2.5 border border-slate-200 rounded-lg text-sm"
-              />
+              <label className="block text-xs font-medium text-slate-500 mb-1">{ru ? 'Тип' : 'Type'}</label>
+              <p className="p-2.5 border border-slate-100 bg-slate-50 rounded-lg text-sm text-slate-600">{post.type}</p>
             </div>
           </div>
 
