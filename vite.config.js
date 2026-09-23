@@ -43,6 +43,7 @@ function aiProxyPlugin() {
               method: "POST",
               headers: { "Content-Type": "application/json", Accept: "application/json" },
               body: JSON.stringify(payload),
+              signal: AbortSignal.timeout(120000),
             });
             const raw = await r.text();
             if (!r.ok) {
@@ -72,6 +73,52 @@ function aiProxyPlugin() {
             res.end(JSON.stringify({ error: (e && e.message) || "proxy error" }));
           }
         });
+      });
+
+      // AI images — server-side fetch with retries
+      server.middlewares.use("/api/image", (req, res) => {
+        const q = req.url || "";
+        const promptMatch = q.match(/[?&]prompt=([^&]*)/);
+        const rawPrompt = decodeURIComponent((promptMatch && promptMatch[1]) || "beautiful photo");
+        // Keep prompt short — long prompts make the upstream stall
+        const prompt = rawPrompt.replace(/\s+/g, " ").trim().slice(0, 180);
+        const width = 768;
+        const height = 480;
+        const seed = Math.floor(Math.random() * 1000000);
+
+        const urls = [
+          `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&nologo=true&seed=${seed}`,
+          `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt.slice(0, 80))}?width=${width}&height=${height}&nologo=true&seed=${seed}`,
+          `https://dummyimage.com/${width}x${height}/6366f1/ffffff.png&text=${encodeURIComponent(prompt.slice(0, 40))}`,
+        ];
+
+        (async () => {
+          for (const url of urls) {
+            for (let attempt = 0; attempt < 2; attempt++) {
+              try {
+                const r = await fetch(url, {
+                  signal: AbortSignal.timeout(75000),
+                  headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" },
+                });
+                if (!r.ok) continue;
+                const buf = Buffer.from(await r.arrayBuffer());
+                const type = (r.headers.get("content-type") || "").toLowerCase();
+                if (buf.length > 400 && (type.startsWith("image/") || buf[0] === 0xff || buf[0] === 0x89)) {
+                  res.statusCode = 200;
+                  res.setHeader("Content-Type", type.startsWith("image/") ? type : "image/jpeg");
+                  res.setHeader("Cache-Control", "no-store");
+                  res.end(buf);
+                  return;
+                }
+              } catch (e) {
+                console.warn("image upstream failed", url.slice(0, 70), (e && e.message) || e);
+              }
+            }
+          }
+          res.statusCode = 502;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: "image generation failed" }));
+        })();
       });
 
       server.middlewares.use("/api/generate-health", (_req, res) => {

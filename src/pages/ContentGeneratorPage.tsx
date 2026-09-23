@@ -4,7 +4,7 @@ import { translations } from '../i18n/translations';
 import {
   Wand2, FileText, Video, Music, Image, Mic, Film, Sparkles, Check, Loader2,
   Volume2, Globe, Shield, Clock, Calendar, Play, Pause, Trash2, Plus,
-  Share2, AlertCircle, Settings, Scissors, AudioLines
+  Share2, AlertCircle, Settings, Scissors, AudioLines, Edit3
 } from 'lucide-react';
 import SocialIcon from '../components/SocialIcon';
 import RichTextEditor from '../components/RichTextEditor';
@@ -28,22 +28,7 @@ const aiModels = [
 ];
 
 type ContentKind = 'post' | 'article' | 'video' | 'music' | 'voiceover' | 'editing';
-
-interface AutoTask {
-  id: string;
-  name: string;
-  contentType: ContentKind;
-  frequency: 'hourly' | 'daily' | 'weekly' | 'custom';
-  schedule: { time: string; days: string[] };
-  /** Calendar dates YYYY-MM-DD for auto-publish */
-  scheduledDates?: string[];
-  networks: string[];
-  topics: string[];
-  active: boolean;
-  lastRun?: string;
-  nextRun?: string;
-  generatedCount: number;
-}
+type AutoTask = import('../store/types').AutoTask;
 
 interface SocialConnectionLite {
   network: string;
@@ -85,6 +70,7 @@ export default function ContentGeneratorPage() {
     language, addPost, currentUser, posts, updatePost, deletePost, moderatePost,
     enqueueForPublish, processDuePosts,
     recordPublication, loadPosts, loadAnalytics, setCurrentPage,
+    autoTasks, loadAutoTasks, upsertAutoTask, removeAutoTask, processDueAutoTasks,
   } = useStore();
   const t = translations[language];
   const ru = language === 'ru';
@@ -92,6 +78,7 @@ export default function ContentGeneratorPage() {
   const [activeTab, setActiveTab] = useState<'manual' | 'auto'>('manual');
   const [contentType, setContentType] = useState<ContentKind>('post');
   const [topic, setTopic] = useState('');
+  const [userPrompt, setUserPrompt] = useState('');
   const [mode, setMode] = useState<'auto' | 'manual'>('auto');
   const [selectedModel, setSelectedModel] = useState('auto');
   const [generateAudioOpt, setGenerateAudioOpt] = useState(false);
@@ -128,36 +115,11 @@ export default function ContentGeneratorPage() {
   const [modNote, setModNote] = useState<Record<string, string>>({});
   const [expandedPost, setExpandedPost] = useState<string | null>(null);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
+  const [showQueueAll, setShowQueueAll] = useState(false);
+  const [showArchiveAll, setShowArchiveAll] = useState(false);
 
   // Auto-generation
-  const [autoTasks, setAutoTasks] = useState<AutoTask[]>([
-    {
-      id: '1',
-      name: ru ? 'Ежедневные посты о технологиях' : 'Daily tech posts',
-      contentType: 'post',
-      frequency: 'daily',
-      schedule: { time: '10:00', days: ['mon', 'tue', 'wed', 'thu', 'fri'] },
-      networks: ['vk', 'telegram'],
-      topics: ['Технологии', 'AI', 'Инновации'],
-      active: true,
-      lastRun: '2024-03-17 10:00',
-      nextRun: '2024-03-18 10:00',
-      generatedCount: 45,
-    },
-    {
-      id: '2',
-      name: ru ? 'Еженедельные статьи' : 'Weekly articles',
-      contentType: 'article',
-      frequency: 'weekly',
-      schedule: { time: '15:00', days: ['sat'] },
-      networks: ['vk', 'youtube'],
-      topics: ['Бизнес', 'Маркетинг', 'Стартапы'],
-      active: true,
-      lastRun: '2024-03-16 15:00',
-      nextRun: '2024-03-23 15:00',
-      generatedCount: 12,
-    },
-  ]);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [newTask, setNewTask] = useState<Partial<AutoTask>>({
     name: '',
@@ -168,6 +130,11 @@ export default function ContentGeneratorPage() {
     topics: [],
     active: true,
   });
+
+  useEffect(() => {
+    loadAutoTasks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
 
   // Refresh connection status when page mounts / socials change
   useEffect(() => {
@@ -186,44 +153,54 @@ export default function ContentGeneratorPage() {
   const isTextType = contentType === 'post' || contentType === 'article';
   const supportsImage = contentType === 'post' || contentType === 'article';
 
-  const buildPrompt = (kind: ContentKind, theme: string): string => {
+  const buildPrompt = (kind: ContentKind, theme: string, extra = ''): string => {
     const base = ru
       ? `Тема запроса: «${theme}». Пиши СТРОГО о ней, без общих шаблонных фраз. Конкретика, факты, шаги, примеры именно про «${theme}». Формат — готовый текст материала.`
       : `Topic: «${theme}». Write STRICTLY about it, no generic filler. Be concrete about «${theme}». Return final content only.`;
+    const marketing = ru
+      ? `\nМаркетинг и SEO: цепляющее начало, вовлечение, ключевые слова из темы, обязательно хэштег #BlogPost, в конце — призыв к действию (лайк, комментарий, сохранить, поделиться).`
+      : `\nMarketing & SEO: strong hook, engagement, keywords from the topic, include #BlogPost, end with CTA (like, comment, save, share).`;
+    const custom = extra.trim()
+      ? (ru
+        ? `\nДополнительный промпт пользователя (учти обязательно):\n${extra.trim()}`
+        : `\nUser prompt (follow strictly):\n${extra.trim()}`)
+      : '';
     if (ru) {
       switch (kind) {
         case 'post':
-          return `Создай пост для соцсетей. ${base}\nДо 500 символов, живой стиль, эмодзи, 3–5 хештегов по теме.`;
+          return `Создай пост для соцсетей. ${base}${marketing}${custom}\nДо 500 символов, живой стиль, эмодзи, 3–5 хештегов по теме + #BlogPost.`;
         case 'article':
-          return `Напиши полную статью. ${base}\nЗаголовок, введение, подразделы с пользой, заключение. 1200–2000 символов.`;
+          return `Напиши полную статью. ${base}${marketing}${custom}\nЗаголовок, введение, подразделы с пользой, заключение. 1200–2000 символов.`;
         case 'video':
-          return `Напиши сценарий видеоролика. ${base}\nТайм-коды, реплики ведущего, визуальные подсказки — показывай предмет/тему запроса.`;
+          return `Напиши сценарий видеоролика. ${base}${marketing}${custom}\nТайм-коды, реплики ведущего, визуальные подсказки.`;
         case 'music':
-          return `Напиши текст песни. ${base}\nКуплет, припев, бридж — образы строго из темы запроса.`;
+          return `Напиши текст песни. ${base}${custom}\nКуплет, припев, бридж — образы из темы.`;
         case 'voiceover':
-          return `Напиши текст для озвучки. ${base}\n4–7 предложений, разговорный стиль, только по теме.`;
+          return `Напиши текст для озвучки. ${base}${marketing}${custom}\n4–7 предложений, разговорный стиль.`;
         case 'editing':
-          return `Опиши план монтажа. ${base}\nСцены, склейки, тайм-коды, титры, музыка — под тему запроса.`;
+          return `Опиши план монтажа. ${base}${custom}\nСцены, склейки, тайм-коды, титры, музыка.`;
       }
     }
     switch (kind) {
       case 'post':
-        return `Write a social media post. ${base}\nUp to 500 chars, emojis, 3–5 hashtags.`;
+        return `Write a social media post. ${base}${marketing}${custom}\nUp to 500 chars, emojis, hashtags + #BlogPost.`;
       case 'article':
-        return `Write a full article. ${base}\nTitle, intro, useful sections, conclusion. 1200–2000 chars.`;
+        return `Write a full article. ${base}${marketing}${custom}\nTitle, intro, useful sections, conclusion. 1200–2000 chars.`;
       case 'video':
-        return `Write a video script. ${base}\nTimestamps, host lines, visuals of the actual subject.`;
+        return `Write a video script. ${base}${marketing}${custom}\nTimestamps, host lines, visuals.`;
       case 'music':
-        return `Write song lyrics. ${base}\nVerse, chorus, bridge with images from the topic.`;
+        return `Write song lyrics. ${base}${custom}\nVerse, chorus, bridge.`;
       case 'voiceover':
-        return `Write a voiceover script. ${base}\n4–7 sentences, conversational.`;
+        return `Write a voiceover script. ${base}${marketing}${custom}\n4–7 sentences, conversational.`;
       case 'editing':
-        return `Describe an editing plan. ${base}\nScenes, cuts, timestamps, titles, music.`;
+        return `Describe an editing plan. ${base}${custom}\nScenes, cuts, timestamps, titles, music.`;
     }
   };
 
   const handleGenerate = async () => {
-    if (!topic.trim()) return;
+    const hasTopic = !!topic.trim();
+    const hasPrompt = !!userPrompt.trim();
+    if (!hasTopic && !hasPrompt) return;
     if (currentUser) {
       const { allowed } = await checkGenerationLimit(currentUser.id, currentUser.subscription);
       if (!allowed) {
@@ -237,7 +214,8 @@ export default function ContentGeneratorPage() {
     setAudioUrl(null);
 
     try {
-      const prompt = buildPrompt(contentType, topic.trim());
+      const theme = topic.trim() || userPrompt.trim().slice(0, 80);
+      const prompt = buildPrompt(contentType, theme, userPrompt);
       let content = await generateText({
         prompt,
         language,
@@ -342,9 +320,9 @@ export default function ContentGeneratorPage() {
     }
   };
 
-  const handleManualSave = () => {
+  const handleManualSave = (): string | null => {
     const body = generatedHtml || videoScript || musicLyrics || editNotes || voiceText;
-    if (!body && !uploadedImage) return;
+    if (!body && !uploadedImage) return currentPostId;
     const id = currentPostId || Date.now().toString();
     const image = uploadedImage || generatedImage;
     const contentHtml = image
@@ -379,6 +357,7 @@ export default function ContentGeneratorPage() {
         likes: 0,
       });
     }
+    return id;
   };
 
   const toggleNetwork = (id: string) => {
@@ -419,7 +398,7 @@ export default function ContentGeneratorPage() {
     }
 
     try {
-      if (successNetworkIds.length > 0) {
+      if (successNetworkIds.length > 0 && errors.length === 0) {
         setPublishStatus({
           type: 'success',
           text: ru ? `Опубликовано: ${successfulNetworks.join(', ')}` : `Published to: ${successfulNetworks.join(', ')}`,
@@ -466,45 +445,114 @@ export default function ContentGeneratorPage() {
         }
         await loadPosts();
         await loadAnalytics();
-        setTimeout(() => setPublishStatus(null), 5000);
+        clearGeneratorForm();
+        // Keep success toast visible; do not wipe it immediately
+        setTimeout(() => setPublishStatus(null), 8000);
+        return;
       }
+
+      if (successNetworkIds.length > 0 && errors.length > 0) {
+        // Partial success — save what was published, keep the form for retry of the rest
+        setPublishStatus({
+          type: 'error',
+          text: ru
+            ? `Частично опубликовано (${successfulNetworks.join(', ')}). Ошибки:\n${errors.join('\n')}\nТекст сохранён — можно повторить.`
+            : `Partially published (${successfulNetworks.join(', ')}). Errors:\n${errors.join('\n')}\nContent kept for retry.`,
+        });
+        setTimeout(() => setPublishStatus(null), 12000);
+        return;
+      }
+
       if (errors.length > 0) {
+        // Full failure — leave topic and result untouched
         setPublishStatus({ type: 'error', text: errors.join('\n') });
-        setTimeout(() => setPublishStatus(null), 10000);
+        setTimeout(() => setPublishStatus(null), 12000);
       }
     } catch (err: any) {
       setPublishStatus({ type: 'error', text: `Ошибка: ${err.message}` });
     }
   };
 
+  /** Clear topic + generated result after successful publish/schedule. */
+  const clearGeneratorForm = () => {
+    setTopic('');
+    setUserPrompt('');
+    setGeneratedHtml('');
+    setGeneratedImage(null);
+    setUploadedImage(null);
+    setVoiceText('');
+    setAudioUrl(null);
+    setVideoScript('');
+    setMusicLyrics('');
+    setEditNotes('');
+    setCurrentPostId(null);
+    setSelectedNetworks([]);
+    setScheduleDays([]);
+    setScheduleDate('');
+    setGenStatus(null);
+  };
+
   const handleSchedule = () => {
     const body = generatedHtml || videoScript || musicLyrics || editNotes || voiceText;
-    if (!body) return;
-    if (!scheduleDays.length && !scheduleDate) return;
+    if (!body && !uploadedImage) return;
+    if (!scheduleDays.length && !scheduleDate) {
+      setPublishStatus({
+        type: 'error',
+        text: ru ? 'Выберите дату в календаре или одну дату.' : 'Pick calendar day(s) or a single date.',
+      });
+      return;
+    }
 
-    handleManualSave();
-    const id = currentPostId;
-    if (!id) return;
+    // Save first and use returned id (avoid stale currentPostId)
+    const id = handleManualSave();
+    if (!id) {
+      setPublishStatus({
+        type: 'error',
+        text: ru ? 'Не удалось сохранить материал в очередь.' : 'Failed to save content to queue.',
+      });
+      return;
+    }
 
-    // Prefer multi-day calendar; fallback to single date
     const days = scheduleDays.length ? scheduleDays : [scheduleDate];
     const nets = selectedNetworks.filter(n => connectedMap[n]);
-    enqueueForPublish(id, days.length === 1 ? `${days[0]}T${scheduleTime || '10:00'}` : undefined, days, scheduleTime || '10:00', nets);
-    setPublishStatus({
-      type: 'success',
-      text: ru
-        ? `В очереди на публикацию: ${days.length} дн. (${days.slice(0, 3).join(', ')}${days.length > 3 ? '…' : ''})`
-        : `Queued for publish: ${days.length} day(s)`,
-    });
+    try {
+      enqueueForPublish(
+        id,
+        days.length === 1 ? `${days[0]}T${scheduleTime || '10:00'}` : undefined,
+        days,
+        scheduleTime || '10:00',
+        nets
+      );
+      void loadPosts();
+      setPublishStatus({
+        type: 'success',
+        text: ru
+          ? `Успешно добавлено в очередь: ${days.length} дн. (${days.slice(0, 3).join(', ')}${days.length > 3 ? '…' : ''}) в ${scheduleTime || '10:00'}`
+          : `Queued: ${days.length} day(s) at ${scheduleTime || '10:00'}`,
+      });
+      clearGeneratorForm();
+      setTimeout(() => setPublishStatus(null), 8000);
+    } catch (e: any) {
+      setPublishStatus({
+        type: 'error',
+        text: ru ? `Ошибка постановки в очередь: ${e?.message || e}` : `Queue error: ${e?.message || e}`,
+      });
+    }
   };
 
   // Queue / Archive / Moderation lists
   const queuePosts = posts
     .filter(p => ['moderating', 'queued', 'scheduled', 'ready', 'rejected'].includes(p.status))
-    .sort((a, b) => (getDueIso(a) || a.createdAt).localeCompare(getDueIso(b) || b.createdAt));
+    .sort((a, b) => (getDueIso(b) || b.createdAt).localeCompare(getDueIso(a) || a.createdAt));
   const archivePosts = posts
     .filter(p => p.status === 'published')
     .sort((a, b) => (b.publishedAt || b.createdAt).localeCompare(a.publishedAt || a.createdAt));
+
+  const VISIBLE_LIMIT = 5;
+  const visibleQueue = showQueueAll ? queuePosts : queuePosts.slice(0, VISIBLE_LIMIT);
+  const visibleArchive = showArchiveAll ? archivePosts : archivePosts.slice(0, VISIBLE_LIMIT);
+  const hiddenQueueCount = Math.max(0, queuePosts.length - visibleQueue.length);
+  const hiddenArchiveCount = Math.max(0, archivePosts.length - visibleArchive.length);
 
   const statusBadge = (s: string) => {
     const map: Record<string, { label: string; cls: string }> = {
@@ -761,25 +809,40 @@ export default function ContentGeneratorPage() {
           <div className="lg:col-span-2 space-y-6 relative z-0">
             {/* Topic */}
             <div className="bg-white rounded-xl p-5 border border-slate-100">
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                {ru ? 'Тема публикации' : 'Publication topic'}
-              </label>
-              <div className="flex gap-3">
-                <input
-                  type="text"
-                  value={topic}
-                  onChange={e => setTopic(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && mode === 'auto' && handleGenerate()}
-                  placeholder={ru ? 'Например: польза утренней зарядки' : 'e.g.: benefits of morning exercise'}
-                  className="flex-1 p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                />
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-slate-700">
+                  {ru ? 'Укажите тему публикации' : 'Specify publication topic'}
+                </label>
+                <span className="text-[11px] text-slate-400">
+                  {topic.length}/200
+                </span>
+              </div>
+              <textarea
+                value={topic}
+                onChange={e => setTopic(e.target.value.slice(0, 200))}
+                rows={3}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey && mode === 'auto') {
+                    e.preventDefault();
+                    handleGenerate();
+                  }
+                }}
+                placeholder={ru ? 'Например: польза утренней зарядки' : 'e.g.: benefits of morning exercise'}
+                className="w-full p-3 border border-slate-200 rounded-xl text-sm leading-relaxed focus:ring-2 focus:ring-blue-500 outline-none resize-y"
+              />
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <p className="text-xs text-slate-500">
+                  {ru
+                    ? 'Коротко опишите тему материала. Enter — генерация.'
+                    : 'Briefly describe the topic. Enter — generate.'}
+                </p>
                 {mode === 'auto' && (
                   <button
                     onClick={handleGenerate}
-                    disabled={isGenerating || !topic.trim()}
-                    className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium hover:shadow-lg transition disabled:opacity-50 flex items-center gap-2 shrink-0"
+                    disabled={isGenerating || !(topic.trim() || userPrompt.trim())}
+                    className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium hover:shadow-lg transition disabled:opacity-50 flex items-center gap-2 shrink-0"
                   >
-                    {isGenerating ? <><Loader2 size={18} className="animate-spin" /> {t.generating}</> : <><Wand2 size={18} /> {t.generate}</>}
+                    {isGenerating ? <><Loader2 size={18} className="animate-spin" /> {t.generating}</> : <><Wand2 size={18} /> {ru ? 'Сгенерировать' : 'Generate'}</>}
                   </button>
                 )}
               </div>
@@ -788,6 +851,51 @@ export default function ContentGeneratorPage() {
                   <Loader2 size={12} className="animate-spin" /> {genStatus}
                 </p>
               )}
+            </div>
+
+            {/* или */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-slate-200" />
+              <span className="text-sm font-medium text-slate-400">{ru ? 'или' : 'or'}</span>
+              <div className="flex-1 h-px bg-slate-200" />
+            </div>
+
+            {/* User prompt for generation */}
+            <div className="bg-white rounded-xl p-5 border border-slate-100">
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-slate-700">
+                  {ru ? 'Напишите свой промпт' : 'Write your own prompt'}
+                </label>
+                <span className="text-[11px] text-slate-400">
+                  {userPrompt.length}/800
+                </span>
+              </div>
+              <textarea
+                value={userPrompt}
+                onChange={e => setUserPrompt(e.target.value.slice(0, 800))}
+                rows={3}
+                placeholder={
+                  ru
+                    ? 'Например: сделай дружелюбный пост с 3 лайфхаками, без сложных терминов, добавь смайлики…'
+                    : 'e.g.: friendly post with 3 tips, no jargon, add emojis…'
+                }
+                className="w-full p-3 border border-slate-200 rounded-xl text-sm leading-relaxed focus:ring-2 focus:ring-blue-500 outline-none resize-y"
+              />
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <p className="text-xs text-slate-500">
+                  {ru
+                    ? 'Дополнительные указания: тон, структура, что включить или исключить.'
+                    : 'Extra instructions: tone, structure, what to include or skip.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleGenerate}
+                  disabled={isGenerating || !(topic.trim() || userPrompt.trim())}
+                  className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium hover:shadow-lg transition disabled:opacity-50 flex items-center gap-2 shrink-0"
+                >
+                  {isGenerating ? <><Loader2 size={18} className="animate-spin" /> {t.generating}</> : <><Wand2 size={18} /> {ru ? 'Сгенерировать' : 'Generate'}</>}
+                </button>
+              </div>
             </div>
 
             {/* Result / Manual editor */}
@@ -917,7 +1025,7 @@ export default function ContentGeneratorPage() {
                 </div>
               )}
 
-              {/* Publish — bottom-right of generation result */}
+              {/* Publish / Schedule — bottom of generation result */}
               <div className="mt-4 pt-4 border-t border-slate-100">
                 {publishStatus && (
                   <div className={`mb-3 p-3 rounded-lg text-sm flex items-start gap-2 ${publishStatus.type === 'success' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
@@ -925,6 +1033,47 @@ export default function ContentGeneratorPage() {
                     <span className="whitespace-pre-line">{publishStatus.text}</span>
                   </div>
                 )}
+
+                {/* Schedule current post */}
+                <div className="mb-3 rounded-lg border border-slate-100 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-slate-700 flex items-center gap-1">
+                      <Calendar size={14} /> {ru ? 'Публикация по расписанию' : 'Scheduled publishing'}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-slate-500">{ru ? 'Время' : 'Time'}</label>
+                      <input
+                        type="time"
+                        value={scheduleTime}
+                        onChange={e => setScheduleTime(e.target.value)}
+                        className="px-2 py-1 border border-slate-200 rounded text-xs"
+                      />
+                      <input
+                        type="date"
+                        value={scheduleDate}
+                        onChange={e => setScheduleDate(e.target.value)}
+                        className="px-2 py-1 border border-slate-200 rounded text-xs"
+                      />
+                    </div>
+                  </div>
+                  <details className="text-xs text-slate-500">
+                    <summary className="cursor-pointer text-blue-600">
+                      {ru ? 'Календарь (несколько дней)' : 'Calendar (multiple days)'}
+                    </summary>
+                    <div className="mt-2 max-w-md">
+                      <CalendarPicker selected={scheduleDays} onChange={setScheduleDays} language={language} />
+                    </div>
+                  </details>
+                  <button
+                    type="button"
+                    onClick={handleSchedule}
+                    disabled={!(generatedHtml || voiceText || videoScript || musicLyrics || editNotes) && !uploadedImage}
+                    className="w-full py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg text-sm font-medium transition disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <Clock size={14} /> {ru ? 'Добавить в очередь по расписанию' : 'Add to schedule queue'}
+                  </button>
+                </div>
+
                 <div className="flex items-center justify-end gap-3">
                   {selectedNetworks.length === 0 && (
                     <span className="text-xs text-slate-400">
@@ -968,7 +1117,7 @@ export default function ContentGeneratorPage() {
                 </p>
               ) : (
                 <div className="space-y-3">
-                  {queuePosts.map(p => {
+                  {visibleQueue.map(p => {
                     const due = getDueIso(p);
                     return (
                       <div key={p.id} className="border border-slate-100 rounded-lg p-3 hover:bg-slate-50">
@@ -1079,6 +1228,16 @@ export default function ContentGeneratorPage() {
                       </div>
                     );
                   })}
+                  {hiddenQueueCount > 0 && (
+                    <button type="button" onClick={() => setShowQueueAll(true)} className="w-full py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-lg border border-dashed border-blue-200">
+                      {ru ? `Показать ещё ${hiddenQueueCount}` : `Show ${hiddenQueueCount} more`}
+                    </button>
+                  )}
+                  {showQueueAll && queuePosts.length > VISIBLE_LIMIT && (
+                    <button type="button" onClick={() => setShowQueueAll(false)} className="w-full py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 rounded-lg border border-slate-200">
+                      {ru ? 'Свернуть' : 'Show less'}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -1092,7 +1251,7 @@ export default function ContentGeneratorPage() {
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {archivePosts.slice(0, 20).map(p => (
+                  {visibleArchive.map(p => (
                     <div key={p.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 border border-slate-50">
                       <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center shrink-0">
                         <Check size={14} className="text-green-600" />
@@ -1107,6 +1266,16 @@ export default function ContentGeneratorPage() {
                       {statusBadge(p.status)}
                     </div>
                   ))}
+                  {hiddenArchiveCount > 0 && (
+                    <button type="button" onClick={() => setShowArchiveAll(true)} className="w-full py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-lg border border-dashed border-blue-200">
+                      {ru ? `Показать ещё ${hiddenArchiveCount}` : `Show ${hiddenArchiveCount} more`}
+                    </button>
+                  )}
+                  {showArchiveAll && archivePosts.length > VISIBLE_LIMIT && (
+                    <button type="button" onClick={() => setShowArchiveAll(false)} className="w-full py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 rounded-lg border border-slate-200">
+                      {ru ? 'Свернуть' : 'Show less'}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -1180,10 +1349,33 @@ export default function ContentGeneratorPage() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => setAutoTasks(prev => prev.map(x => x.id === task.id ? { ...x, active: !x.active } : x))} className="p-2 rounded-lg hover:bg-slate-50">
+                    <button
+                      onClick={() => {
+                        setEditingTaskId(task.id);
+                        setNewTask({
+                          name: task.name,
+                          contentType: task.contentType,
+                          frequency: task.frequency,
+                          schedule: task.schedule,
+                          scheduledDates: task.scheduledDates,
+                          networks: task.networks,
+                          topics: task.topics,
+                          active: task.active,
+                        });
+                        setScheduleDays(task.scheduledDates || []);
+                        setScheduleTime(task.schedule?.time || '10:00');
+                        setScheduleDate('');
+                        setShowCreateTask(true);
+                      }}
+                      className="p-2 rounded-lg hover:bg-indigo-50 text-indigo-600"
+                      title={ru ? 'Редактировать' : 'Edit'}
+                    >
+                      <Edit3 size={18} />
+                    </button>
+                    <button onClick={() => upsertAutoTask({ ...task, active: !task.active })} className="p-2 rounded-lg hover:bg-slate-50">
                       {task.active ? <Pause size={18} className="text-yellow-600" /> : <Play size={18} className="text-green-600" />}
                     </button>
-                    <button onClick={() => setAutoTasks(prev => prev.filter(x => x.id !== task.id))} className="p-2 rounded-lg hover:bg-red-50 text-red-600">
+                    <button onClick={() => removeAutoTask(task.id)} className="p-2 rounded-lg hover:bg-red-50 text-red-600">
                       <Trash2 size={18} />
                     </button>
                   </div>
@@ -1196,7 +1388,7 @@ export default function ContentGeneratorPage() {
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <div className="absolute inset-0 bg-black/40" onClick={() => setShowCreateTask(false)} />
               <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 space-y-4">
-                <h3 className="font-bold text-xl">{ru ? 'Новая задача' : 'New task'}</h3>
+                <h3 className="font-bold text-xl">{editingTaskId ? (ru ? 'Редактирование задачи' : 'Edit task') : (ru ? 'Новая задача' : 'New task')}</h3>
                 <input
                   value={newTask.name || ''}
                   onChange={e => setNewTask({ ...newTask, name: e.target.value })}
@@ -1284,27 +1476,30 @@ export default function ContentGeneratorPage() {
                       const days = scheduleDays.length
                         ? scheduleDays
                         : (scheduleDate ? [scheduleDate] : []);
-                      setAutoTasks(prev => [...prev, {
-                        id: Date.now().toString(),
+                      upsertAutoTask({
+                        id: editingTaskId || Date.now().toString(),
                         name: newTask.name!,
                         contentType: newTask.contentType || 'post',
                         frequency: newTask.frequency || 'daily',
-                        schedule: { time: scheduleTime || '10:00', days: [] },
+                        schedule: { time: scheduleTime || '10:00', days: newTask.schedule?.days || [] },
                         scheduledDates: days,
                         networks: newTask.networks || [],
                         topics: newTask.topics!,
-                        active: true,
-                        generatedCount: 0,
-                      }]);
+                        active: newTask.active !== false,
+                        generatedCount: editingTaskId
+                          ? (autoTasks.find(t => t.id === editingTaskId)?.generatedCount || 0)
+                          : 0,
+                      });
                       setScheduleDays([]);
                       setScheduleDate('');
+                      setEditingTaskId(null);
                       setShowCreateTask(false);
                     }}
                     className="flex-1 py-3 bg-blue-500 text-white rounded-lg font-medium"
                   >
-                    {ru ? 'Создать' : 'Create'}
+                    {editingTaskId ? (ru ? 'Сохранить' : 'Save') : (ru ? 'Создать' : 'Create')}
                   </button>
-                  <button onClick={() => setShowCreateTask(false)} className="px-4 py-3 bg-slate-100 rounded-lg">{ru ? 'Отмена' : 'Cancel'}</button>
+                  <button onClick={() => { setShowCreateTask(false); setEditingTaskId(null); }} className="px-4 py-3 bg-slate-100 rounded-lg">{ru ? 'Отмена' : 'Cancel'}</button>
                 </div>
               </div>
             </div>

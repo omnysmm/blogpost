@@ -32,8 +32,16 @@ export async function generateText(options: GenerateTextOptions): Promise<string
   const { prompt, maxLength = 2000, language = 'ru' } = options;
 
   const systemPrompt = language === 'ru'
-    ? `Ты — опытный редактор. Пиши связный содержательный текст СТРОГО по теме запроса: факты, детали, структура. Без воды. Не больше ${maxLength} символов. Только готовый материал.`
-    : `You are an expert editor. Write coherent factual content STRICTLY on the topic. Max ${maxLength} chars.`;
+    ? `Ты — маркетолог и редактор. Пиши связный текст СТРОГО по теме запроса.
+Обязательно:
+1) Маркетинговые приёмы вовлечения: цепляющий первый абзац/крючок, интрига, социальное доказательство, польза.
+2) SEO: ключевые слова из темы в тексте и в конце; понятная структура.
+3) Обязательный хэштег #BlogPost (можно в конце с другими).
+4) Чёткий призыв к действию: просить лайк, комментарий, сохранение, репост или ответ.
+Не больше ${maxLength} символов. Только готовый материал без служебных пометок.`
+    : `You are a marketer and editor. Write coherent content STRICTLY on the topic.
+Always include: (1) engagement hooks, (2) SEO keywords, (3) hashtag #BlogPost, (4) clear CTA (like/comment/save/share).
+Max ${maxLength} chars. Ready material only.`;
 
   // 1) Local Vite middleware (server-side LLM) — most reliable
   try {
@@ -44,7 +52,7 @@ export async function generateText(options: GenerateTextOptions): Promise<string
     });
     const data = await res.json();
     const text = String(data?.text || '').trim();
-    if (res.ok && text.length > 40) return text;
+    if (res.ok && text.length > 40) return ensureSeoEngagement(text, language);
     console.warn('Vite /api/generate returned weak result', res.status, data?.error);
   } catch (e) {
     console.warn('Vite /api/generate failed:', e);
@@ -67,7 +75,7 @@ export async function generateText(options: GenerateTextOptions): Promise<string
         max_tokens: 1200,
         temperature: 0.7,
       });
-      if (text && text.length > 40) return text;
+      if (text && text.length > 40) return ensureSeoEngagement(text, language);
     } catch (e) {
       console.warn(`LLM ${t.model} @ ${t.url} failed:`, e);
     }
@@ -78,6 +86,23 @@ export async function generateText(options: GenerateTextOptions): Promise<string
       ? 'Не удалось сгенерировать текст по теме. Проверьте соединение и попробуйте ещё раз.'
       : 'Failed to generate topic text. Check connection and try again.'
   );
+}
+
+/** Guarantee #BlogPost and a CTA if the model omitted them. */
+export function ensureSeoEngagement(text: string, language: 'ru' | 'en' = 'ru'): string {
+  let out = text.trim();
+  if (!/#BlogPost/i.test(out)) {
+    out += language === 'ru' ? '\n\n#BlogPost' : '\n\n#BlogPost';
+  }
+  const hasCta = language === 'ru'
+    ? /(лайк|коммент|сохран|репост|подпиш|ответьте|напишите)/i.test(out)
+    : /(like|comment|save|share|follow|reply)/i.test(out);
+  if (!hasCta) {
+    out += language === 'ru'
+      ? '\n\n👇 А как вы относитесь к этой теме? Напишите в комментариях, поставьте лайк и сохраните пост!'
+      : '\n\n👇 What do you think? Drop a comment, like this post, and save it for later!';
+  }
+  return out;
 }
 
 async function postOpenAI(endpoint: string, body: Record<string, unknown>): Promise<string> {
@@ -112,33 +137,33 @@ async function postOpenAI(endpoint: string, body: Record<string, unknown>): Prom
 // ═══ Image Generation ═══
 export async function generateImage(options: GenerateImageOptions): Promise<string> {
   const { prompt, width = 1024, height = 640, style = 'realistic' } = options;
-  const cleanPrompt = String(prompt || 'beautiful editorial photo')
+  const cleanPrompt = String(prompt || 'beautiful photo')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 600);
-  const fullPrompt = `${cleanPrompt}, ${style} photography, high quality, detailed, sharp focus, professional`;
+    .slice(0, 180);
+  const fullPrompt = `${cleanPrompt}, ${style}, high quality`;
   const seed = Math.floor(Math.random() * 1_000_000);
-  const qs = `?width=${width}&height=${height}&nologo=true&enhance=true&seed=${seed}`;
+
   const candidates = [
-    `/api/img/prompt/${encodeURIComponent(fullPrompt)}${qs}`,
-    `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}${qs}`,
+    `/api/image?prompt=${encodeURIComponent(fullPrompt)}`,
+    `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=${width}&height=${height}&nologo=true&seed=${seed}`,
   ];
 
   for (const url of candidates) {
     try {
       const ctrl = new AbortController();
-      const timer = window.setTimeout(() => ctrl.abort(), 120_000);
+      const timer = window.setTimeout(() => ctrl.abort(), 90_000);
       const res = await fetch(url, { signal: ctrl.signal });
       window.clearTimeout(timer);
       if (res.ok) {
         const blob = await res.blob();
-        if (blob.size > 1000) return URL.createObjectURL(blob);
+        if (blob.size > 400) return URL.createObjectURL(blob);
       }
     } catch (e) {
       console.warn('Image fetch failed for', url, e);
     }
   }
-  return candidates[0];
+  throw new Error('Не удалось сгенерировать изображение. Попробуйте ещё раз.');
 }
 
 // ═══ Audio Generation (TTS) ═══

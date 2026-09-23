@@ -48,6 +48,23 @@ export interface Post {
   likes: number;
 }
 
+export type ContentKind = 'post' | 'article' | 'video' | 'music' | 'voiceover' | 'editing';
+
+export interface AutoTask {
+  id: string;
+  name: string;
+  contentType: ContentKind;
+  frequency: 'hourly' | 'daily' | 'weekly' | 'custom';
+  schedule: { time: string; days: string[] };
+  /** Calendar dates YYYY-MM-DD */
+  scheduledDates?: string[];
+  networks: string[];
+  topics: string[];
+  active: boolean;
+  lastRun?: string;
+  generatedCount: number;
+}
+
 export interface AdBlock {
   id: string;
   title: string;

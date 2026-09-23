@@ -18,7 +18,7 @@ import SettingsPage from './pages/SettingsPage';
 import LegalPage from './pages/LegalPage';
 
 function App() {
-  const { currentPage, currentUser, restoreSession, loadUserData, resetNetworkPublications, dataLoadedFor, processDuePosts } = useStore();
+  const { currentPage, currentUser, restoreSession, loadUserData, resetNetworkPublications, dataLoadedFor, processDuePosts, processDueAutoTasks, loadAutoTasks } = useStore();
   useInactivityLogout();
 
   // Restore login + saved posts/analytics after refresh
@@ -41,12 +41,20 @@ function App() {
     return () => { cancelled = true; };
   }, [currentUser?.id, dataLoadedFor]);
 
-  // Auto-publish scheduler: check queue every 30s
+  // Auto-publish + auto-generation scheduler
   useEffect(() => {
     if (!currentUser?.id) return;
-    const tick = () => { void processDuePosts(); };
-    tick();
-    const id = window.setInterval(tick, 30_000);
+    loadAutoTasks();
+    const tick = async () => {
+      try {
+        await processDueAutoTasks();
+        await processDuePosts();
+      } catch (e) {
+        console.error('scheduler tick failed', e);
+      }
+    };
+    void tick();
+    const id = window.setInterval(() => { void tick(); }, 30_000);
     return () => window.clearInterval(id);
   }, [currentUser?.id]);
 

@@ -30,6 +30,9 @@ export default function EditPostModal({ post, language, onSave, onClose }: EditP
     if (scheduledAt) {
       updates.scheduledAt = new Date(scheduledAt).toISOString();
       updates.scheduledDates = [];
+      if (post.status !== 'moderating' && post.status !== 'rejected') {
+        updates.status = 'scheduled';
+      }
     }
     onSave(post.id, updates);
     setSaving(false);

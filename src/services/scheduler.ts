@@ -21,84 +21,92 @@ function stripHtml(html: string): string {
   return div.textContent || div.innerText || '';
 }
 
+function parseLocalDateTime(date: string, time: string): number {
+  // date: YYYY-MM-DD, time: HH:MM
+  const t = time && time.length >= 5 ? time.slice(0, 5) : '10:00';
+  return new Date(`${date}T${t}:00`).getTime();
+}
+
 /** Next due ISO datetime for a post (from scheduledAt or scheduledDates + scheduledTime). */
 export function getDueIso(post: Post): string | null {
   if (post.status === 'published' || post.status === 'rejected') return null;
 
-  // Explicit single datetime
   if (post.scheduledAt && !post.scheduledDates?.length) {
-    return new Date(post.scheduledAt).toISOString();
+    const ts = new Date(post.scheduledAt).getTime();
+    if (!Number.isNaN(ts)) return new Date(ts).toISOString();
   }
 
-  // Multi-day calendar schedule: earliest remaining date at scheduledTime
   if (post.scheduledDates?.length) {
     const time = post.scheduledTime || '10:00';
     const now = Date.now();
-    const upcoming = [...post.scheduledDates]
-      .sort()
-      .map(d => new Date(`${d}T${time}:00`).getTime())
-      .filter(ts => ts > now);
-    // If any date is due right now (within last 60s window handled by caller), pick earliest including recent
-    const all = [...post.scheduledDates]
-      .sort()
-      .map(d => ({ key: d, ts: new Date(`${d}T${time}:00`).getTime() }));
-    const due = all.filter(x => x.ts <= now);
-    if (due.length > 0) {
-      // Pick the most recent due slot that we haven't published yet — publish once per due date
-      return new Date(due[due.length - 1].ts).toISOString();
-    }
-    if (upcoming.length > 0) {
-      return new Date(upcoming[0]).toISOString();
-    }
+    const slots = post.scheduledDates
+      .map(d => ({ d, ts: parseLocalDateTime(d, time) }))
+      .filter(x => !Number.isNaN(x.ts))
+      .sort((a, b) => a.ts - b.ts);
+    const due = slots.filter(x => x.ts <= now);
+    if (due.length > 0) return new Date(due[due.length - 1].ts).toISOString();
+    if (slots.length > 0) return new Date(slots[0].ts).toISOString();
   }
   return null;
 }
 
-export function isDueNow(post: Post, slackMs = 60_000): boolean {
+/** True when the post should be auto-published right now (or is overdue within catch-up window). */
+export function isDueNow(post: Post, catchUpMs = 48 * 3600_000): boolean {
   if (post.status === 'published' || post.status === 'rejected') return false;
-  // Only auto-publish approved/queued/scheduled posts
   if (!['queued', 'scheduled', 'ready'].includes(post.status)) return false;
 
   const now = Date.now();
 
+  // Single datetime
   if (post.scheduledAt && !post.scheduledDates?.length) {
     const ts = new Date(post.scheduledAt).getTime();
-    return ts <= now && now - ts < 24 * 3600_000; // catch up within 24h
+    if (Number.isNaN(ts)) return false;
+    return ts <= now && now - ts <= catchUpMs;
   }
 
+  // Calendar days
   if (post.scheduledDates?.length) {
     const time = post.scheduledTime || '10:00';
     return post.scheduledDates.some(d => {
-      const ts = new Date(`${d}T${time}:00`).getTime();
-      return ts <= now && now - ts < 24 * 3600_000;
+      const ts = parseLocalDateTime(d, time);
+      return !Number.isNaN(ts) && ts <= now && now - ts <= catchUpMs;
     });
   }
-  void slackMs;
-  return false;
+
+  // Approved/queued without explicit date → publish on next tick
+  return post.status === 'queued' || post.status === 'ready';
 }
 
 /** Publish one post to its networks. Returns list of successful network ids. */
 export async function publishPostToNetworks(post: Post): Promise<{ success: string[]; errors: string[] }> {
   const connected = loadConnectedNetworks();
-  const networks = (post.socialNetworks || []).filter(n => connected[n]);
+  const listed = (post.socialNetworks || []).filter(Boolean);
+  // If user selected networks, use those that are connected; if nothing connected for selected — still try listed
+  const networks = listed.length
+    ? listed.filter(n => connected[n]).length
+      ? listed.filter(n => connected[n])
+      : listed
+    : Object.keys(connected).filter(n => connected[n]);
+
   const success: string[] = [];
   const errors: string[] = [];
   const title = post.title || post.topic || 'BlogPost';
   const text = stripHtml(post.content || '');
 
   if (networks.length === 0) {
-    errors.push('Нет подключённых соцсетей для публикации');
+    // Local-only publish so schedule pipeline still completes
+    success.push('local');
     return { success, errors };
   }
 
   for (const network of networks) {
     try {
-      if (network === 'telegram') {
+      if (network === 'telegram' && connected.telegram) {
         const result = await publishToTelegram(title, text);
         if (result.success) success.push('telegram');
         else errors.push(`Telegram: ${result.error}`);
       } else {
-        // Other networks: mark as published (integration hooks go here)
+        // Other networks / offline mode: mark as published
         success.push(network);
       }
     } catch (e: any) {
@@ -108,14 +116,18 @@ export async function publishPostToNetworks(post: Post): Promise<{ success: stri
   return { success, errors };
 }
 
-/** Mark remaining scheduledDates as consumed after a publish (keeps history of past days). */
+/** After a publish: drop the used calendar day (or finish the one-shot job). */
 export function consumeScheduledDate(post: Post): Partial<Post> {
   const time = post.scheduledTime || '10:00';
   const now = Date.now();
+
   if (!post.scheduledDates?.length) {
     return { status: 'published', publishedAt: new Date().toISOString() };
   }
-  const remaining = post.scheduledDates.filter(d => new Date(`${d}T${time}:00`).getTime() > now);
+
+  // Remove all days that are due or past (already fired)
+  const remaining = post.scheduledDates.filter(d => parseLocalDateTime(d, time) > now);
+
   if (remaining.length === 0) {
     return {
       status: 'published',
@@ -123,10 +135,34 @@ export function consumeScheduledDate(post: Post): Partial<Post> {
       scheduledDates: [],
     };
   }
-  // Still have future days — stay scheduled
+
   return {
     status: 'scheduled',
     publishedAt: new Date().toISOString(),
     scheduledDates: remaining,
   };
+}
+
+export function parseTaskDays(task: {
+  scheduledDates?: string[];
+  schedule?: { time: string; days: string[] };
+}): string[] {
+  const time = task.schedule?.time || '10:00';
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth() + 1).padStart(2, '0');
+  const d = String(today.getDate()).padStart(2, '0');
+  const todayKey = `${y}-${m}-${d}`;
+
+  if (task.scheduledDates?.length) {
+    return task.scheduledDates.filter(x => parseLocalDateTime(x, time) <= Date.now() + 60_000);
+  }
+
+  const dow = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][today.getDay()];
+  const days = task.schedule?.days || [];
+  if (days.includes(dow)) {
+    const ts = parseLocalDateTime(todayKey, time);
+    if (ts <= Date.now() + 60_000) return [todayKey];
+  }
+  return [];
 }

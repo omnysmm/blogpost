@@ -14,10 +14,11 @@ import {
   clearSessionUser,
 } from '../services/persistence';
 import { isDueNow, publishPostToNetworks, consumeScheduledDate } from '../services/scheduler';
-import type { Language, Currency, Subscription, UserRole, User, Post, AdBlock, Analytics } from './types';
+import { loadAutoTasks as loadLocalAutoTasks, saveAutoTasks as saveLocalAutoTasks, isTaskDue, pickTopic, markTaskSlotRan } from '../services/autoTasks';
+import type { Language, Currency, Subscription, UserRole, User, Post, AdBlock, Analytics, AutoTask } from './types';
 import type { PostStatus } from './types';
 
-export type { Language, Currency, Subscription, UserRole, User, Post, AdBlock, Analytics, PostStatus };
+export type { Language, Currency, Subscription, UserRole, User, Post, AdBlock, Analytics, PostStatus, AutoTask };
 
 interface AppState {
   language: Language;
@@ -53,6 +54,12 @@ interface AppState {
   moderatePost: (id: string, action: 'approve' | 'reject', note?: string) => void;
   enqueueForPublish: (id: string, scheduledAt?: string, scheduledDates?: string[], scheduledTime?: string, networks?: string[]) => void;
   processDuePosts: () => Promise<number>;
+  autoTasks: AutoTask[];
+  loadAutoTasks: () => void;
+  saveAutoTasks: (tasks: AutoTask[]) => void;
+  upsertAutoTask: (task: AutoTask) => void;
+  removeAutoTask: (id: string) => void;
+  processDueAutoTasks: () => Promise<number>;
   loadPlatformStats: () => Promise<void>;
   loadAllUsers: () => Promise<void>;
   applyPromo: (code: string) => Promise<{ valid: boolean; discount: number; type: string } | null>;
@@ -127,6 +134,7 @@ export const useStore = create<AppState>((set, get) => ({
   platformStats: { users: 0, posts: 0, revenue: 0, pending: 0 },
   allUsers: [],
   dataLoadedFor: null,
+  autoTasks: [],
 
   setLanguage: (lang) => set({ language: lang, currency: 'RUB' }),
   setCurrency: (curr) => set({ currency: curr }),
@@ -490,7 +498,10 @@ export const useStore = create<AppState>((set, get) => ({
   // ═══ Put post into publish queue with schedule ═══
   enqueueForPublish: (id, scheduledAt, scheduledDates, scheduledTime, networks) => {
     const post = get().posts.find(p => p.id === id);
-    if (!post) return;
+    if (!post) {
+      console.warn('enqueueForPublish: post not found', id);
+      return;
+    }
     const updates: Partial<Post> = {
       status: scheduledAt || scheduledDates?.length ? 'scheduled' : 'queued',
     };
@@ -498,6 +509,10 @@ export const useStore = create<AppState>((set, get) => ({
     if (scheduledDates !== undefined) updates.scheduledDates = scheduledDates;
     if (scheduledTime !== undefined) updates.scheduledTime = scheduledTime;
     if (networks !== undefined) updates.socialNetworks = networks;
+    // If still on moderation, keep schedule fields but wait for approve
+    if (post.status === 'moderating') {
+      updates.status = 'moderating';
+    }
     get().updatePost(id, updates);
   },
 
@@ -505,24 +520,123 @@ export const useStore = create<AppState>((set, get) => ({
   processDuePosts: async () => {
     const user = get().currentUser;
     if (!user) return 0;
-    const due = get().posts.filter(p =>
-      isDueNow(p) && (p.status === 'queued' || p.status === 'scheduled' || p.status === 'ready')
-    );
+    const due = get().posts.filter(p => isDueNow(p));
+    if (!due.length) return 0;
 
     let published = 0;
     for (const post of due) {
-      const { success } = await publishPostToNetworks(post);
-      if (success.length > 0) {
-        for (const network of success) {
-          await get().recordPublication(network, post.id);
+      try {
+        const { success, errors } = await publishPostToNetworks(post);
+        if (errors.length) console.warn('Auto-publish errors', post.id, errors);
+        if (success.length > 0) {
+          for (const network of success) {
+            await get().recordPublication(network, post.id);
+          }
+          const after = consumeScheduledDate(post);
+          get().updatePost(post.id, after);
+          published++;
         }
-        const after = consumeScheduledDate(post);
-        get().updatePost(post.id, after);
-        published++;
+      } catch (e) {
+        console.error('processDuePosts item failed', post.id, e);
       }
     }
-    if (published > 0) await get().loadAnalytics();
+    if (published > 0) {
+      await get().loadAnalytics();
+      await get().loadPosts();
+    }
     return published;
+  },
+
+  // ═══ Auto-generation tasks ═══
+  loadAutoTasks: () => {
+    const user = get().currentUser;
+    if (!user) return;
+    set({ autoTasks: loadLocalAutoTasks(user.id) });
+  },
+  saveAutoTasks: (tasks) => {
+    const user = get().currentUser;
+    set({ autoTasks: tasks });
+    if (user) saveLocalAutoTasks(user.id, tasks);
+  },
+  upsertAutoTask: (task) => {
+    const list = get().autoTasks;
+    const idx = list.findIndex(t => t.id === task.id);
+    const next = idx >= 0 ? list.map(t => (t.id === task.id ? task : t)) : [...list, task];
+    get().saveAutoTasks(next);
+  },
+  removeAutoTask: (id) => {
+    get().saveAutoTasks(get().autoTasks.filter(t => t.id !== id));
+  },
+
+  /** Generate + enqueue posts for auto-tasks that are due. */
+  processDueAutoTasks: async () => {
+    const user = get().currentUser;
+    if (!user) return 0;
+    const tasks = get().autoTasks;
+    if (!tasks.length) get().loadAutoTasks();
+
+    let ran = 0;
+    for (const task of get().autoTasks) {
+      const { due, day, time } = isTaskDue(task);
+      if (!due) continue;
+
+      const topic = pickTopic(task);
+      try {
+        const kindLabel =
+          task.contentType === 'article' ? 'статью' :
+          task.contentType === 'video' ? 'сценарий видео' :
+          task.contentType === 'music' ? 'текст песни' :
+          task.contentType === 'voiceover' ? 'текст для озвучки' :
+          task.contentType === 'editing' ? 'план монтажа' : 'пост для соцсетей';
+
+        const content = await generateText({
+          prompt: `Напиши ${kindLabel} строго на тему: "${topic}". Готовый текст, без вступлений о генерации.`,
+          language: get().language,
+          maxLength: 1600,
+        });
+
+        const id = Date.now().toString() + '-' + Math.random().toString(36).slice(2, 7);
+        get().addPost({
+          id,
+          title: topic,
+          content,
+          topic,
+          type: (['post', 'article', 'video', 'music'] as const).includes(task.contentType as any)
+            ? (task.contentType as Post['type'])
+            : 'post',
+          status: 'queued',
+          createdAt: new Date().toISOString(),
+          socialNetworks: task.networks || [],
+          scheduledAt: new Date().toISOString(),
+          scheduledDates: [day],
+          scheduledTime: time,
+          hasAudio: task.contentType === 'voiceover',
+          hasVideo: task.contentType === 'video' || task.contentType === 'editing',
+          hasImage: task.contentType === 'post' || task.contentType === 'article',
+          aiModel: 'AutoML',
+          views: 0,
+          likes: 0,
+        });
+
+        markTaskSlotRan(task.id, day, time);
+        get().upsertAutoTask({
+          ...task,
+          lastRun: new Date().toISOString(),
+          generatedCount: (task.generatedCount || 0) + 1,
+        });
+        ran++;
+      } catch (e) {
+        console.error('processDueAutoTasks failed for', task.id, e);
+        // Still mark slot to avoid tight error loop; user can edit & re-enable
+        markTaskSlotRan(task.id, day, time);
+      }
+    }
+
+    if (ran > 0) {
+      await get().processDuePosts();
+      await get().loadPosts();
+    }
+    return ran;
   },
 
   // ═══ Load Platform Stats (Admin) ═══
