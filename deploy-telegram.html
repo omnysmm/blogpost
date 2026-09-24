@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
@@ -17,17 +17,20 @@
   <h1>Deploy telegram-publish Edge Function</h1>
 
   <div class="step">
-    <b>1.</b> На открывшейся странице Supabase нажмите <b>"Create a new function"</b>
+    <b>1.</b> РќР° РѕС‚РєСЂС‹РІС€РµР№СЃСЏ СЃС‚СЂР°РЅРёС†Рµ Supabase РЅР°Р¶РјРёС‚Рµ <b>"Create a new function"</b>
   </div>
 
   <div class="step">
-    <b>2.</b> Введите имя: <code>telegram-publish</code>
+    <b>2.</b> Р’РІРµРґРёС‚Рµ РёРјСЏ: <code>telegram-publish</code>
   </div>
 
   <div class="step">
-    <b>3.</b> Удалите весь код из редактора и вставьте этот (нажмите на блок кода — он скопируется):
-    <div class="note">Нажмите на блок кода ниже, чтобы скопировать его целиком</div>
+    <b>3.</b> РЈРґР°Р»РёС‚Рµ РІРµСЃСЊ РєРѕРґ РёР· СЂРµРґР°РєС‚РѕСЂР° Рё РІСЃС‚Р°РІСЊС‚Рµ СЌС‚РѕС‚ (РЅР°Р¶РјРёС‚Рµ РЅР° Р±Р»РѕРє РєРѕРґР° вЂ” РѕРЅ СЃРєРѕРїРёСЂСѓРµС‚СЃСЏ):
+    <div class="note">РќР°Р¶РјРёС‚Рµ РЅР° Р±Р»РѕРє РєРѕРґР° РЅРёР¶Рµ, С‡С‚РѕР±С‹ СЃРєРѕРїРёСЂРѕРІР°С‚СЊ РµРіРѕ С†РµР»РёРєРѕРј</div>
     <div class="code" onclick="copyCode()">// Supabase Edge Function: telegram-publish
+// Proxies Telegram Bot API calls (avoids CORS issues from browser)
+// Supports photo as public URL (imageUrl) or binary upload (imageBase64)
+
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 
 serve(async (req) => {
@@ -45,35 +48,51 @@ serve(async (req) => {
     const { token, chatId, text, imageUrl, imageBase64, imageMime } = await req.json()
 
     if (!token) {
-      return jsonResponse({ success: false, error: 'Не указан токен бота Telegram' }, 400)
+      return jsonResponse({ success: false, error: 'РќРµ СѓРєР°Р·Р°РЅ С‚РѕРєРµРЅ Р±РѕС‚Р° Telegram' }, 400)
     }
     if (!chatId) {
-      return jsonResponse({ success: false, error: 'Не указан Chat ID' }, 400)
+      return jsonResponse({ success: false, error: 'РќРµ СѓРєР°Р·Р°РЅ Chat ID' }, 400)
     }
 
     const fullText = text || ''
     const caption = fullText.slice(0, 1024)
     const rest = fullText.slice(1024)
 
-    let result
+    let result: any
 
     if (imageBase64) {
-      const binary = atob(imageBase64)
+      // Manual multipart вЂ” more reliable than FormData+Blob across Deno versions
+      const binary = atob(imageBase64.replace(/\s/g, ''))
       const bytes = new Uint8Array(binary.length)
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
 
-      const form = new FormData()
-      form.append('chat_id', String(chatId))
-      form.append('caption', caption)
-      form.append('parse_mode', 'HTML')
-      form.append('photo', new Blob([bytes], { type: imageMime || 'image/jpeg' }), 'image.jpg')
+      const boundary = '----BlogPostEdge' + Math.random().toString(16).slice(2)
+      const chunks: Uint8Array[] = []
+      const enc = (s: string) => new TextEncoder().encode(s)
+      chunks.push(enc(`--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${chatId}\r\n`))
+      chunks.push(enc(`--${boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${caption}\r\n`))
+      chunks.push(enc(`--${boundary}\r\nContent-Disposition: form-data; name="parse_mode"\r\n\r\nHTML\r\n`))
+      chunks.push(enc(`--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="image.jpg"\r\nContent-Type: ${imageMime || 'image/jpeg'}\r\n\r\n`))
+      chunks.push(bytes)
+      chunks.push(enc(`\r\n--${boundary}--\r\n`))
 
-      const response = await fetch('https://api.telegram.org/bot' + token + '/sendPhoto', {
+      let total = 0
+      for (const c of chunks) total += c.length
+      const body = new Uint8Array(total)
+      let offset = 0
+      for (const c of chunks) {
+        body.set(c, offset)
+        offset += c.length
+      }
+
+      const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
         method: 'POST',
-        body: form,
+        headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+        body,
       })
       result = await response.json()
     } else if (imageUrl) {
+      // Send photo with caption (Telegram downloads the public URL)
       result = await callTelegram(token, 'sendPhoto', {
         chat_id: chatId,
         photo: imageUrl,
@@ -81,6 +100,7 @@ serve(async (req) => {
         parse_mode: 'HTML',
       })
     } else {
+      // Send text message
       result = await callTelegram(token, 'sendMessage', {
         chat_id: chatId,
         text: fullText.slice(0, 4096),
@@ -89,6 +109,7 @@ serve(async (req) => {
     }
 
     if (result.ok) {
+      // Caption max is 1024 вЂ” send the rest as a follow-up text message
       if (rest.trim()) {
         await callTelegram(token, 'sendMessage', {
           chat_id: chatId,
@@ -96,18 +117,22 @@ serve(async (req) => {
           parse_mode: 'HTML',
         })
       }
-      return jsonResponse({ success: true, messageId: result.result?.message_id })
+      return jsonResponse({
+        success: true,
+        messageId: result.result?.message_id,
+      })
     } else {
-      const errorMsg = translateTelegramError(result.description || 'Неизвестная ошибка')
+      // Translate common Telegram errors to Russian
+      const errorMsg = translateTelegramError(result.description || 'РќРµРёР·РІРµСЃС‚РЅР°СЏ РѕС€РёР±РєР°')
       return jsonResponse({ success: false, error: errorMsg })
     }
-  } catch (error) {
-    return jsonResponse({ success: false, error: 'Ошибка сервера: ' + error.message }, 500)
+  } catch (error: any) {
+    return jsonResponse({ success: false, error: `РћС€РёР±РєР° СЃРµСЂРІРµСЂР°: ${error.message}` }, 500)
   }
 })
 
-async function callTelegram(token, method, body) {
-  const response = await fetch('https://api.telegram.org/bot' + token + '/' + method, {
+async function callTelegram(token: string, method: string, body: Record<string, any>) {
+  const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -115,31 +140,37 @@ async function callTelegram(token, method, body) {
   return response.json()
 }
 
-function translateTelegramError(msg) {
+function translateTelegramError(msg: string): string {
   const lower = msg.toLowerCase()
-  if (lower.includes('chat not found')) return 'Чат не найден. Проверьте Chat ID и убедитесь, что бот добавлен в канал/группу.'
-  if (lower.includes('bot was blocked')) return 'Бот заблокирован пользователем.'
-  if (lower.includes('not enough rights')) return 'У бота недостаточно прав. Назначьте бота администратором.'
-  if (lower.includes('bad request: photo')) return 'Не удалось загрузить изображение. Проверьте файл (JPEG/PNG, до 10 МБ).'
-  if (lower.includes('bad request')) return 'Неверный запрос. Проверьте формат сообщения и Chat ID.'
-  if (lower.includes('unauthorized')) return 'Неверный токен бота. Проверьте API Key в настройках.'
-  if (lower.includes('forbidden')) return 'Доступ запрещён. Бот не имеет прав на отправку сообщений.'
-  return 'Telegram: ' + msg
+  if (lower.includes('chat not found')) return 'Р§Р°С‚ РЅРµ РЅР°Р№РґРµРЅ. РџСЂРѕРІРµСЂСЊС‚Рµ Chat ID Рё СѓР±РµРґРёС‚РµСЃСЊ, С‡С‚Рѕ Р±РѕС‚ РґРѕР±Р°РІР»РµРЅ РІ РєР°РЅР°Р»/РіСЂСѓРїРїСѓ.'
+  if (lower.includes('bot was blocked')) return 'Р‘РѕС‚ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј. РџРѕРїСЂРѕСЃРёС‚Рµ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ СЂР°Р·Р±Р»РѕРєРёСЂРѕРІР°С‚СЊ Р±РѕС‚Р°.'
+  if (lower.includes('not enough rights')) return 'РЈ Р±РѕС‚Р° РЅРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ. РќР°Р·РЅР°С‡СЊС‚Рµ Р±РѕС‚Р° Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРј РєР°РЅР°Р»Р°/РіСЂСѓРїРїС‹.'
+  if (lower.includes('bad request: photo')) return 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РёР·РѕР±СЂР°Р¶РµРЅРёРµ. РџСЂРѕРІРµСЂСЊС‚Рµ С„Р°Р№Р» (JPEG/PNG, РґРѕ 10 РњР‘).'
+  if (lower.includes('bad request')) return 'РќРµРІРµСЂРЅС‹Р№ Р·Р°РїСЂРѕСЃ. РџСЂРѕРІРµСЂСЊС‚Рµ С„РѕСЂРјР°С‚ СЃРѕРѕР±С‰РµРЅРёСЏ Рё Chat ID.'
+  if (lower.includes('unauthorized')) return 'РќРµРІРµСЂРЅС‹Р№ С‚РѕРєРµРЅ Р±РѕС‚Р°. РџСЂРѕРІРµСЂСЊС‚Рµ API Key РІ РЅР°СЃС‚СЂРѕР№РєР°С….'
+  if (lower.includes('forbidden')) return 'Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰С‘РЅ. Р‘РѕС‚ РЅРµ РёРјРµРµС‚ РїСЂР°РІ РЅР° РѕС‚РїСЂР°РІРєСѓ СЃРѕРѕР±С‰РµРЅРёР№ РІ СЌС‚РѕС‚ С‡Р°С‚.'
+  if (lower.includes('message is too long')) return 'РЎРѕРѕР±С‰РµРЅРёРµ СЃР»РёС€РєРѕРј РґР»РёРЅРЅРѕРµ. РњР°РєСЃРёРјСѓРј 4096 СЃРёРјРІРѕР»РѕРІ.'
+  if (lower.includes('wrong file identifier')) return 'РќРµРІРµСЂРЅС‹Р№ URL РёР·РѕР±СЂР°Р¶РµРЅРёСЏ. РџСЂРѕРІРµСЂСЊС‚Рµ СЃСЃС‹Р»РєСѓ РЅР° РёР·РѕР±СЂР°Р¶РµРЅРёРµ.'
+  return `Telegram: ${msg}`
 }
 
-function jsonResponse(data, status) {
+function jsonResponse(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
-    status: status || 200,
-    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    },
   })
-}</div>
+}
+</div>
   </div>
 
   <div class="step">
-    <b>4.</b> Нажмите <b>"Deploy"</b>
+    <b>4.</b> РќР°Р¶РјРёС‚Рµ <b>"Deploy"</b>
   </div>
 
-  <div id="toast">Код скопирован!</div>
+  <div id="toast">РљРѕРґ СЃРєРѕРїРёСЂРѕРІР°РЅ!</div>
 
   <script>
     function copyCode() {
