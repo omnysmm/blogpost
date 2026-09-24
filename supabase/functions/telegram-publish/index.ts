@@ -32,24 +32,34 @@ serve(async (req) => {
     let result: any
 
     if (imageBase64) {
-      // Upload photo bytes (blob:/data: sources converted on client)
-      const binary = atob(imageBase64)
+      // Manual multipart — more reliable than FormData+Blob across Deno versions
+      const binary = atob(imageBase64.replace(/\s/g, ''))
       const bytes = new Uint8Array(binary.length)
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
 
-      const form = new FormData()
-      form.append('chat_id', String(chatId))
-      form.append('caption', caption)
-      form.append('parse_mode', 'HTML')
-      form.append(
-        'photo',
-        new Blob([bytes], { type: imageMime || 'image/jpeg' }),
-        'image.jpg'
-      )
+      const boundary = '----BlogPostEdge' + Math.random().toString(16).slice(2)
+      const chunks: Uint8Array[] = []
+      const enc = (s: string) => new TextEncoder().encode(s)
+      chunks.push(enc(`--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${chatId}\r\n`))
+      chunks.push(enc(`--${boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${caption}\r\n`))
+      chunks.push(enc(`--${boundary}\r\nContent-Disposition: form-data; name="parse_mode"\r\n\r\nHTML\r\n`))
+      chunks.push(enc(`--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="image.jpg"\r\nContent-Type: ${imageMime || 'image/jpeg'}\r\n\r\n`))
+      chunks.push(bytes)
+      chunks.push(enc(`\r\n--${boundary}--\r\n`))
+
+      let total = 0
+      for (const c of chunks) total += c.length
+      const body = new Uint8Array(total)
+      let offset = 0
+      for (const c of chunks) {
+        body.set(c, offset)
+        offset += c.length
+      }
 
       const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
         method: 'POST',
-        body: form,
+        headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+        body,
       })
       result = await response.json()
     } else if (imageUrl) {

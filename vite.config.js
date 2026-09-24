@@ -168,6 +168,23 @@ function aiProxyPlugin() {
       });
 
       // Telegram Bot API proxy — avoids browser CORS / Failed to fetch on api.telegram.org
+      // Photos arrive as JSON { photoBase64 } and are packed as multipart here (no FormData in browser).
+      function buildTelegramMultipart(fields, fileBuf, mime, filename) {
+        const boundary = "----BlogPostForm" + Math.random().toString(16).slice(2);
+        const chunks = [];
+        for (const [name, value] of Object.entries(fields)) {
+          if (value == null || value === "") continue;
+          chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${String(value)}\r\n`));
+        }
+        chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="${filename || "image.jpg"}"\r\nContent-Type: ${mime || "image/jpeg"}\r\n\r\n`));
+        chunks.push(Buffer.isBuffer(fileBuf) ? fileBuf : Buffer.from(fileBuf));
+        chunks.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+        return {
+          body: Buffer.concat(chunks),
+          contentType: `multipart/form-data; boundary=${boundary}`,
+        };
+      }
+
       server.middlewares.use("/api/telegram", (req, res) => {
         const q = req.url || "";
         // Support both /sendPhoto (mount-stripped) and /api/telegram/sendPhoto (full path)
@@ -187,73 +204,57 @@ function aiProxyPlugin() {
             }
 
             const contentType = String(req.headers["content-type"] || "");
-            const headers = {};
-            if (contentType) headers["Content-Type"] = contentType;
-
-            // JSON + photoBase64 → rebuild multipart for Telegram (reliable photo upload)
             let body = raw;
+            let outContentType = contentType;
+
             if (contentType.includes("application/json") && raw.length) {
-              try {
-                const parsed = JSON.parse(raw.toString("utf8"));
-                if (!parsed.token) parsed.token = token;
-                const photoBase64 = parsed.photoBase64;
+              const parsed = JSON.parse(raw.toString("utf8"));
+              const photoBase64 = parsed.photoBase64;
+              const dataUrlPhoto = parsed.photo && String(parsed.photo).startsWith("data:") ? String(parsed.photo) : "";
+
+              if (photoBase64 || dataUrlPhoto) {
+                let buf;
+                let mime = parsed.photoMime || "image/jpeg";
                 if (photoBase64) {
-                  const mime = parsed.photoMime || "image/jpeg";
-                  const name = parsed.photoName || "image.jpg";
-                  const buf = Buffer.from(photoBase64, "base64");
-                  const FormData = globalThis.FormData;
-                  const Blob = globalThis.Blob;
-                  const form = new FormData();
-                  form.append("chat_id", String(parsed.chat_id ?? parsed.chatId ?? ""));
-                  form.append("caption", String(parsed.caption ?? ""));
-                  form.append("parse_mode", String(parsed.parse_mode || "HTML"));
-                  form.append("photo", new Blob([buf], { type: mime }), name);
-                  const r = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-                    method: "POST",
-                    body: form,
-                    signal: AbortSignal.timeout(120000),
-                  });
-                  const text = await r.text();
-                  res.statusCode = r.status;
-                  res.setHeader("Content-Type", "application/json; charset=utf-8");
-                  res.end(text);
-                  return;
+                  buf = Buffer.from(String(photoBase64).replace(/\s/g, ""), "base64");
+                  mime = parsed.photoMime || mime;
+                } else {
+                  const comma = dataUrlPhoto.indexOf(",");
+                  const meta = dataUrlPhoto.slice(5, comma);
+                  mime = (meta.split(";")[0] || "image/jpeg");
+                  buf = Buffer.from(dataUrlPhoto.slice(comma + 1).replace(/\s/g, ""), "base64");
                 }
-                delete parsed.photoBase64;
-                delete parsed.photoMime;
-                delete parsed.photoName;
-                if (method === "sendPhoto" && parsed.photo && !String(parsed.photo).startsWith("http")) {
-                  // data URL in photo field
-                  const dataUrl = String(parsed.photo);
-                  const comma = dataUrl.indexOf(",");
-                  if (comma > 0) {
-                    const meta = dataUrl.slice(5, comma);
-                    const mime = (meta.split(";")[0] || "image/jpeg");
-                    const buf = Buffer.from(dataUrl.slice(comma + 1).replace(/\s/g, ""), meta.includes("base64") ? "base64" : "utf8");
-                    const form = new FormData();
-                    form.append("chat_id", String(parsed.chat_id ?? ""));
-                    form.append("caption", String(parsed.caption ?? ""));
-                    form.append("parse_mode", String(parsed.parse_mode || "HTML"));
-                    form.append("photo", new Blob([buf], { type: mime }), "image.jpg");
-                    const r = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-                      method: "POST",
-                      body: form,
-                      signal: AbortSignal.timeout(120000),
-                    });
-                    const text = await r.text();
-                    res.statusCode = r.status;
-                    res.setHeader("Content-Type", "application/json; charset=utf-8");
-                    res.end(text);
-                    return;
-                  }
-                }
-                body = Buffer.from(JSON.stringify(parsed), "utf8");
-              } catch {}
+                const mp = buildTelegramMultipart(
+                  {
+                    chat_id: String(parsed.chat_id ?? parsed.chatId ?? ""),
+                    caption: String(parsed.caption ?? ""),
+                    parse_mode: String(parsed.parse_mode || "HTML"),
+                  },
+                  buf,
+                  mime,
+                  parsed.photoName || "image.jpg"
+                );
+                const r = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+                  method: "POST",
+                  headers: { "Content-Type": mp.contentType },
+                  body: mp.body,
+                  signal: AbortSignal.timeout(120000),
+                });
+                const text = await r.text();
+                res.statusCode = r.status;
+                res.setHeader("Content-Type", "application/json; charset=utf-8");
+                res.end(text);
+                return;
+              }
+
+              if (!parsed.token) parsed.token = token;
+              body = Buffer.from(JSON.stringify(parsed), "utf8");
+              outContentType = "application/json";
             }
 
             const r = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
               method: "POST",
-              headers,
+              headers: outContentType ? { "Content-Type": outContentType } : {},
               body,
               signal: AbortSignal.timeout(120000),
             });

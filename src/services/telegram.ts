@@ -169,27 +169,34 @@ function buildPhotoForm(token: string, chatId: string, caption: string, image: R
   return form;
 }
 
-/** sendPhoto with image via proxy multipart → proxy JSON base64 → direct multipart. */
+/** sendPhoto — JSON base64 to local proxy / edge (avoid browser FormData to api.telegram.org). */
 async function sendPhoto(
   token: string,
   chatId: string,
-  caption: string,
+  text: string,
   image: ResolvedImage
 ): Promise<TelegramPublishResult> {
   const errors: string[] = [];
+  const caption = (text || '').slice(0, 1024);
+  const rest = (text || '').slice(1024);
 
-  // 1) Local Vite proxy — multipart with photo file (raw body forwarded to Telegram)
+  const finishOk = async (r: TelegramPublishResult) => {
+    if (r.success && rest.trim()) {
+      try { await sendMessage(token, chatId, rest); } catch {}
+    }
+    return r;
+  };
+
+  // 1) Supabase Edge FIRST — local machine often cannot reach api.telegram.org
   try {
-    const form = buildPhotoForm(token, chatId, caption, image);
-    const api = await postMultipart(`/api/telegram/sendPhoto`, token, form);
-    const r = toResult(api);
-    if (r.success) return r;
-    errors.push(r.error || 'proxy multipart');
+    const r = await sendViaEdge(token, chatId, text, image);
+    if (r.success) return finishOk(r);
+    errors.push(r.error || 'edge');
   } catch (e: any) {
-    errors.push(e?.message || 'proxy multipart failed');
+    errors.push(e?.message || 'edge failed');
   }
 
-  // 2) Local Vite proxy — JSON + photoBase64 (server rebuilds multipart)
+  // 2) Local Vite proxy (dev) — JSON + photoBase64
   if (image.kind === 'bytes' && image.base64) {
     try {
       const api = await postJson(`/api/telegram/sendPhoto`, token, {
@@ -201,25 +208,14 @@ async function sendPhoto(
         photoName: 'image.jpg',
       });
       const r = toResult(api);
-      if (r.success) return r;
-      errors.push(r.error || 'proxy base64');
+      if (r.success) return finishOk(r);
+      errors.push(r.error || 'local proxy');
     } catch (e: any) {
-      errors.push(e?.message || 'proxy base64 failed');
+      errors.push(e?.message || 'local proxy failed');
     }
   }
 
-  // 3) Direct Bot API multipart (fresh FormData every time)
-  try {
-    const form = buildPhotoForm(token, chatId, caption, image);
-    const api = await postMultipart(`https://api.telegram.org/bot${token}/sendPhoto`, token, form);
-    const r = toResult(api);
-    if (r.success) return r;
-    errors.push(r.error || 'direct');
-  } catch (e: any) {
-    errors.push(e?.message || 'direct fetch failed');
-  }
-
-  // 4) JSON photo URL
+  // 3) Public URL photo via proxy JSON
   if (image.url) {
     try {
       const api = await postJson(`/api/telegram/sendPhoto`, token, {
@@ -229,11 +225,22 @@ async function sendPhoto(
         parse_mode: 'HTML',
       });
       const r = toResult(api);
-      if (r.success) return r;
+      if (r.success) return finishOk(r);
       errors.push(r.error || 'url photo');
     } catch (e: any) {
       errors.push(e?.message || 'url photo failed');
     }
+  }
+
+  // 4) Direct multipart last resort (often blocked: "Failed to fetch")
+  try {
+    const form = buildPhotoForm(token, chatId, caption, image);
+    const api = await postMultipart(`https://api.telegram.org/bot${token}/sendPhoto`, token, form);
+    const r = toResult(api);
+    if (r.success) return finishOk(r);
+    errors.push(r.error || 'direct');
+  } catch (e: any) {
+    errors.push(e?.message || 'direct fetch failed');
   }
 
   return { success: false, error: errors.filter(Boolean).join('; ') || 'sendPhoto failed' };
@@ -319,21 +326,7 @@ export async function publishToTelegram(
   // Photo + caption
   if (image) {
     try {
-      const r = await sendPhoto(config.token, config.chatId, caption, image);
-      if (r.success) {
-        if (rest.trim()) {
-          try { await sendMessage(config.token, config.chatId, rest); } catch {}
-        }
-        return r;
-      }
-      lastError = r.error || lastError;
-    } catch (e: any) {
-      lastError = e?.message || lastError;
-    }
-
-    // Edge with the same image
-    try {
-      const r = await sendViaEdge(config.token, config.chatId, formattedText, image);
+      const r = await sendPhoto(config.token, config.chatId, formattedText, image);
       if (r.success) return r;
       lastError = r.error || lastError;
     } catch (e: any) {
@@ -356,17 +349,16 @@ export async function publishToTelegram(
     };
   }
 
-  // No image requested — text only
+  // No image requested — text only (edge first)
   try {
-    const r = await sendMessage(config.token, config.chatId, formattedText);
+    const r = await sendViaEdge(config.token, config.chatId, formattedText, null);
     if (r.success) return r;
     lastError = r.error || lastError;
   } catch (e: any) {
     lastError = e?.message || lastError;
   }
-
   try {
-    const r = await sendViaEdge(config.token, config.chatId, formattedText, null);
+    const r = await sendMessage(config.token, config.chatId, formattedText);
     if (r.success) return r;
     lastError = r.error || lastError;
   } catch (e: any) {
