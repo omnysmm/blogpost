@@ -146,6 +146,7 @@ async function postJson(url: string, token: string, body: Record<string, unknown
 
 async function postMultipart(url: string, token: string, form: FormData): Promise<any> {
   // Fresh FormData per call — never reuse after fetch
+  // Do NOT set Content-Type — browser/undici must add multipart boundary
   const res = await fetch(url, {
     method: 'POST',
     body: form,
@@ -168,7 +169,7 @@ function buildPhotoForm(token: string, chatId: string, caption: string, image: R
   return form;
 }
 
-/** sendPhoto with image via proxy JSON (base64) → edge → direct multipart. */
+/** sendPhoto with image via proxy multipart → proxy JSON base64 → direct multipart. */
 async function sendPhoto(
   token: string,
   chatId: string,
@@ -177,7 +178,18 @@ async function sendPhoto(
 ): Promise<TelegramPublishResult> {
   const errors: string[] = [];
 
-  // 1) Local Vite proxy — JSON + photoBase64 (rebuilds multipart server-side)
+  // 1) Local Vite proxy — multipart with photo file (raw body forwarded to Telegram)
+  try {
+    const form = buildPhotoForm(token, chatId, caption, image);
+    const api = await postMultipart(`/api/telegram/sendPhoto`, token, form);
+    const r = toResult(api);
+    if (r.success) return r;
+    errors.push(r.error || 'proxy multipart');
+  } catch (e: any) {
+    errors.push(e?.message || 'proxy multipart failed');
+  }
+
+  // 2) Local Vite proxy — JSON + photoBase64 (server rebuilds multipart)
   if (image.kind === 'bytes' && image.base64) {
     try {
       const api = await postJson(`/api/telegram/sendPhoto`, token, {
@@ -190,13 +202,13 @@ async function sendPhoto(
       });
       const r = toResult(api);
       if (r.success) return r;
-      errors.push(r.error || 'proxy');
+      errors.push(r.error || 'proxy base64');
     } catch (e: any) {
-      errors.push(e?.message || 'proxy fetch failed');
+      errors.push(e?.message || 'proxy base64 failed');
     }
   }
 
-  // 2) Direct Bot API multipart (fresh FormData every time)
+  // 3) Direct Bot API multipart (fresh FormData every time)
   try {
     const form = buildPhotoForm(token, chatId, caption, image);
     const api = await postMultipart(`https://api.telegram.org/bot${token}/sendPhoto`, token, form);
@@ -207,7 +219,7 @@ async function sendPhoto(
     errors.push(e?.message || 'direct fetch failed');
   }
 
-  // 3) JSON photo URL (if we still have a public URL)
+  // 4) JSON photo URL
   if (image.url) {
     try {
       const api = await postJson(`/api/telegram/sendPhoto`, token, {

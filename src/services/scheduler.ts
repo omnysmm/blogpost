@@ -23,8 +23,8 @@ function stripHtml(html: string): string {
 
 /** First <img src="..."> in post HTML (data:/blob:/http). */
 function extractImageSrc(html: string): string | undefined {
-  const m = (html || '').match(/<img[^>]+src=["']([^"']+)["']/i);
-  const src = m?.[1];
+  const m = (html || '').match(/<img\b[^>]*?\bsrc\s*=\s*(["'])([\s\S]*?)\1/i);
+  const src = m?.[2];
   if (!src) return undefined;
   return src.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
 }

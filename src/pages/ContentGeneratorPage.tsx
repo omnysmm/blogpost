@@ -80,8 +80,8 @@ function htmlToPlain(html: string): string {
 
 /** First <img src="..."> in HTML (data:/blob:/http). */
 function extractImageSrc(html: string): string | undefined {
-  const m = (html || '').match(/<img[^>]+src=["']([^"']+)["']/i);
-  const src = m?.[1];
+  const m = (html || '').match(/<img\b[^>]*?\bsrc\s*=\s*(["'])([\s\S]*?)\1/i);
+  const src = m?.[2];
   if (!src) return undefined;
   return src.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
 }
@@ -376,8 +376,8 @@ export default function ContentGeneratorPage() {
             : userPrompt.trim().slice(0, 180);
           const imageUrl = await aiGenerateImage({ prompt: imagePrompt, width: 1024, height: 640 });
           if (imageUrl) {
+            // Keep text clean; photo is attached after HTML conversion
             setGeneratedImage(imageUrl);
-            content = withImageHtml(content, imageUrl, imagePosition);
           } else {
             setStatus(ru ? 'Изображение не удалось создать — текст готов.' : 'Image failed — text is ready.');
           }
@@ -419,6 +419,7 @@ export default function ContentGeneratorPage() {
         content += `\n\n---\n${adLabels[adPosition] || '📢 [Ad]'}\n---`;
       }
 
+      // Markdown → HTML first; attach <img> AFTER so data URLs are never broken by replaces
       const html = content
         .replace(/^# (.+)$/gm, '<h1>$1</h1>')
         .replace(/^## (.+)$/gm, '<h2>$1</h2>')
@@ -426,7 +427,9 @@ export default function ContentGeneratorPage() {
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/\n\n/g, '</p><p>')
         .replace(/\n/g, '<br/>');
-      const finalHtml = `<p>${html}</p>`;
+      const textHtml = `<p>${html}</p>`;
+      const photo = uploadedImage || generatedImage;
+      const finalHtml = withImageHtml(textHtml, photo, imagePosition);
 
       setGeneratedHtml(finalHtml);
       setStatus(null);
@@ -619,7 +622,12 @@ export default function ContentGeneratorPage() {
       }
       try {
         if (network === 'telegram') {
-          const image = uploadedImage || generatedImage || extractImageSrc(body);
+          const image =
+            uploadedImage ||
+            generatedImage ||
+            extractImageSrc(body) ||
+            extractImageSrc(generatedHtml) ||
+            extractImageSrc(getActiveBody());
           const result = await publishToTelegram(topic || 'BlogPost', htmlToPlain(body), image || undefined);
           if (result.success) {
             successfulNetworks.push('Telegram');

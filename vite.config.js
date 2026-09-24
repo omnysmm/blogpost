@@ -170,7 +170,9 @@ function aiProxyPlugin() {
       // Telegram Bot API proxy — avoids browser CORS / Failed to fetch on api.telegram.org
       server.middlewares.use("/api/telegram", (req, res) => {
         const q = req.url || "";
-        const method = q.replace(/^\/+/, "").split("?")[0] || "sendMessage";
+        // Support both /sendPhoto (mount-stripped) and /api/telegram/sendPhoto (full path)
+        const method =
+          q.replace(/^\/+/, "").split("?")[0].split("/").pop() || "sendMessage";
         const chunks = [];
         req.on("data", (c) => chunks.push(c));
         req.on("end", async () => {
