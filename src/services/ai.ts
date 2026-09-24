@@ -12,6 +12,10 @@ interface GenerateTextOptions {
   maxLength?: number;
   language?: 'ru' | 'en';
   tone?: 'professional' | 'casual' | 'creative';
+  /** Override default system prompt (for free-form user prompts). */
+  system?: string;
+  /** When true, return model output as-is (no forced SEO/CTA/#BlogPost). */
+  raw?: boolean;
 }
 
 interface GenerateImageOptions {
@@ -55,9 +59,9 @@ function extractLlmText(raw: string): string {
 
 // ═══ Text Generation ═══
 export async function generateText(options: GenerateTextOptions): Promise<string> {
-  const { prompt, maxLength = 2000, language = 'ru' } = options;
+  const { prompt, maxLength = 2000, language = 'ru', system, raw } = options;
 
-  const systemPrompt = language === 'ru'
+  const systemPrompt = system || (language === 'ru'
     ? `Ты — маркетолог и редактор. Пиши связный текст СТРОГО по теме запроса.
 Обязательно:
 1) Маркетинговые приёмы вовлечения: цепляющий первый абзац/крючок, интрига, социальное доказательство, польза.
@@ -67,10 +71,13 @@ export async function generateText(options: GenerateTextOptions): Promise<string
 Не больше ${maxLength} символов. Только готовый материал без служебных пометок.`
     : `You are a marketer and editor. Write coherent content STRICTLY on the topic.
 Always include: (1) engagement hooks, (2) SEO keywords, (3) hashtag #BlogPost, (4) clear CTA (like/comment/save/share).
-Max ${maxLength} chars. Ready material only.`;
+Max ${maxLength} chars. Ready material only.`);
 
-  const MIN_LEN = 40;
-  const accept = (t: string) => (t && t.length > MIN_LEN ? ensureSeoEngagement(t, language) : null);
+  const MIN_LEN = 20;
+  const accept = (t: string) => {
+    if (!t || t.length <= MIN_LEN) return null;
+    return raw ? t : ensureSeoEngagement(t, language);
+  };
 
   // 1) Local Vite middleware (server-side LLM) — most reliable
   try {

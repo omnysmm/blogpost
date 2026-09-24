@@ -110,13 +110,16 @@ export async function publishPostToNetworks(post: Post): Promise<{ success: stri
 
   for (const network of networks) {
     try {
-      if (network === 'telegram' && connected.telegram) {
+      if (network === 'telegram') {
+        // Always attempt real send — do not fake success when not "connected"
         const result = await publishToTelegram(title, text, imageSrc);
         if (result.success) success.push('telegram');
         else errors.push(`Telegram: ${result.error}`);
-      } else {
-        // Other networks / offline mode: mark as published
+      } else if (connected[network]) {
+        // Other networks (no public API yet): mark as published locally
         success.push(network);
+      } else {
+        errors.push(`${network}: ${'не подключён / not connected'}`);
       }
     } catch (e: any) {
       errors.push(`${network}: ${e?.message || 'error'}`);

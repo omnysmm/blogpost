@@ -1,7 +1,39 @@
-import { useState } from 'react';
-import { X, Save } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { X, Save, ArrowUp, ArrowDown, Upload, RefreshCw, Trash2, Loader2 } from 'lucide-react';
 import RichTextEditor from './RichTextEditor';
+import { generateImage as aiGenerateImage } from '../services/ai';
+import { buildImagePrompt } from '../services/contentEngine';
 import type { Post } from '../store/types';
+
+function extractImageSrc(html: string): string | undefined {
+  const m = (html || '').match(/<img[^>]+src=["']([^"']+)["']/i);
+  const src = m?.[1];
+  if (!src) return undefined;
+  return src.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}
+
+function stripImagesFromHtml(html: string): string {
+  return (html || '')
+    .replace(/<p>\s*<img[^>]*>\s*<\/p>/gi, '')
+    .replace(/<img[^>]*>/gi, '')
+    .replace(/^\s+|\s+$/g, '');
+}
+
+function withImageHtml(body: string, src: string | null | undefined, position: 'top' | 'bottom'): string {
+  const text = stripImagesFromHtml(body);
+  if (!src) return text;
+  const img = `<p><img src="${src.replace(/"/g, '&quot;')}" alt="" style="max-width:100%;border-radius:12px;display:block" /></p>`;
+  return position === 'top' ? `${img}\n\n${text}` : `${text}\n\n${img}`;
+}
+
+function readImageFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('read failed'));
+    reader.readAsDataURL(file);
+  });
+}
 
 interface EditPostModalProps {
   post: Post;
@@ -17,13 +49,27 @@ export default function EditPostModal({ post, language, onSave, onClose }: EditP
   const [html, setHtml] = useState(post.content || '');
   const [scheduledAt, setScheduledAt] = useState(post.scheduledAt ? post.scheduledAt.slice(0, 16) : '');
   const [saving, setSaving] = useState(false);
+  const [imageSrc, setImageSrc] = useState<string | null>(extractImageSrc(post.content || '') || null);
+  const [imagePosition, setImagePosition] = useState<'top' | 'bottom'>(() => {
+    const content = post.content || '';
+    const imgIdx = content.search(/<img/i);
+    const textIdx = content.search(/[^<\s][^<]*/);
+    return imgIdx >= 0 && textIdx >= 0 && imgIdx < textIdx ? 'top' : 'bottom';
+  });
+  const [isRegeneratingImage, setIsRegeneratingImage] = useState(false);
+  const replaceRef = useRef<HTMLInputElement | null>(null);
+
+  const bodyText = stripImagesFromHtml(html);
+  const previewHtml = withImageHtml(bodyText, imageSrc, imagePosition);
 
   const handleSave = () => {
     setSaving(true);
+    const content = withImageHtml(bodyText, imageSrc, imagePosition);
     const updates: Partial<Post> = {
       title: title.trim() || post.title,
       topic: topic.trim() || post.topic,
-      content: html,
+      content,
+      hasImage: !!imageSrc,
     };
     if (scheduledAt) {
       updates.scheduledAt = new Date(scheduledAt).toISOString();
@@ -35,6 +81,10 @@ export default function EditPostModal({ post, language, onSave, onClose }: EditP
     onSave(post.id, updates);
     setSaving(false);
     onClose();
+  };
+
+  const togglePosition = () => {
+    setImagePosition(prev => (prev === 'top' ? 'bottom' : 'top'));
   };
 
   return (
@@ -70,12 +120,89 @@ export default function EditPostModal({ post, language, onSave, onClose }: EditP
             </div>
           </div>
 
+          {/* Image: move / regenerate / replace from file */}
+          <div className="rounded-lg border border-slate-100 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-xs font-medium text-slate-600">{ru ? 'Изображение' : 'Image'}</p>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={togglePosition}
+                  className="text-xs px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 flex items-center gap-1"
+                  title={imagePosition === 'top' ? (ru ? 'Переместить вниз' : 'Move down') : (ru ? 'Переместить вверх' : 'Move up')}
+                >
+                  {imagePosition === 'top' ? <ArrowDown size={12} /> : <ArrowUp size={12} />}
+                  {imagePosition === 'top' ? (ru ? 'Вниз' : 'Down') : (ru ? 'Вверх' : 'Up')}
+                </button>
+                <button
+                  type="button"
+                  disabled={isRegeneratingImage}
+                  onClick={async () => {
+                    setIsRegeneratingImage(true);
+                    try {
+                      const srcText = topic.trim() || title.trim() || bodyText.slice(0, 80);
+                      const imagePrompt = buildImagePrompt(srcText, language);
+                      const url = await aiGenerateImage({ prompt: imagePrompt, width: 1024, height: 640 });
+                      if (url) setImageSrc(url);
+                    } catch (e) {
+                      console.warn('Regenerate image failed', e);
+                    } finally {
+                      setIsRegeneratingImage(false);
+                    }
+                  }}
+                  className="text-xs px-2 py-1 bg-indigo-50 hover:bg-indigo-100 rounded-lg text-indigo-700 flex items-center gap-1 disabled:opacity-50"
+                >
+                  {isRegeneratingImage ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                  {ru ? 'Перегенерировать' : 'Regenerate'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => replaceRef.current?.click()}
+                  className="text-xs px-2 py-1 bg-blue-50 hover:bg-blue-100 rounded-lg text-blue-700 flex items-center gap-1"
+                >
+                  <Upload size={12} />
+                  {ru ? 'Заменить из файла' : 'Replace from file'}
+                </button>
+                {imageSrc && (
+                  <button
+                    type="button"
+                    onClick={() => setImageSrc(null)}
+                    className="text-xs px-2 py-1 bg-red-50 hover:bg-red-100 rounded-lg text-red-600 flex items-center gap-1"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
+            </div>
+            {imageSrc ? (
+              <img src={imageSrc} alt="" className="max-h-48 rounded-lg border border-slate-200 bg-slate-50" />
+            ) : (
+              <p className="text-xs text-slate-400">{ru ? 'Изображение не выбрано' : 'No image'}</p>
+            )}
+            <input
+              ref={replaceRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={async e => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (!file) return;
+                try {
+                  setImageSrc(await readImageFile(file));
+                } catch (err) {
+                  console.warn('Replace image failed', err);
+                }
+              }}
+            />
+          </div>
+
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">
               {ru ? 'Текст публикации (форматирование, эмодзи, картинки)' : 'Post text (formatting, emojis, images)'}
             </label>
             <RichTextEditor
-              value={html}
+              value={bodyText}
               onChange={setHtml}
               placeholder={ru ? 'Отредактируйте текст…' : 'Edit text…'}
               minHeight={260}
@@ -85,7 +212,7 @@ export default function EditPostModal({ post, language, onSave, onClose }: EditP
 
           <div className="grid md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-500 mb-1">{ru ? 'Одна дата (необязательно)' : 'Single date (optional)'}</label>
+              <label className="block text-xs font-medium text-slate-500 mb-1">{ru ? 'Дата и время публикации' : 'Publish date & time'}</label>
               <input
                 type="datetime-local"
                 value={scheduledAt}
@@ -104,6 +231,17 @@ export default function EditPostModal({ post, language, onSave, onClose }: EditP
               {ru ? 'Дни календаря' : 'Calendar days'}: {post.scheduledDates.join(', ')}
             </p>
           ) : null}
+
+          {/* Live preview with image placement */}
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">
+              {ru ? 'Предпросмотр' : 'Preview'}
+            </label>
+            <div
+              className="text-xs text-slate-700 bg-slate-50 rounded p-2 max-h-48 overflow-y-auto"
+              dangerouslySetInnerHTML={{ __html: previewHtml }}
+            />
+          </div>
         </div>
 
         <div className="p-5 border-t border-slate-100 flex justify-end gap-2 shrink-0">
