@@ -31,42 +31,83 @@ function aiProxyPlugin() {
                   role: "user",
                   content:
                     language === "ru"
-                      ? `${prompt}\n\nГотовый текст строго по теме.`
-                      : `${prompt}\n\nReady content strictly on topic.`,
+                      ? `${prompt}`
+                      : `${prompt}`,
                 },
               ],
               max_tokens: 1200,
               temperature: 0.7,
             };
 
-            const r = await fetch("https://text.pollinations.ai/openai", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", Accept: "application/json" },
-              body: JSON.stringify(payload),
-              signal: AbortSignal.timeout(120000),
-            });
-            const raw = await r.text();
-            if (!r.ok) {
-              res.statusCode = 502;
-              res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ error: "upstream " + r.status, detail: raw.slice(0, 300) }));
-              return;
+            const upstreams = [
+              { url: "https://text.pollinations.ai/openai", body: payload },
+              {
+                url: "https://text.pollinations.ai/openai",
+                body: { ...payload, model: "openai-fast" },
+              },
+            ];
+
+            let lastErr = "";
+            for (const up of upstreams) {
+              try {
+                const r = await fetch(up.url, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", Accept: "application/json" },
+                  body: JSON.stringify(up.body),
+                  signal: AbortSignal.timeout(120000),
+                });
+                const raw = await r.text();
+                if (!r.ok) {
+                  lastErr = "upstream " + r.status + " " + raw.slice(0, 200);
+                  continue;
+                }
+                let text = "";
+                try {
+                  const data = JSON.parse(raw);
+                  text =
+                    (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) ||
+                    (data && data.choices && data.choices[0] && data.choices[0].text) ||
+                    (data && data.text) ||
+                    "";
+                } catch (e) {
+                  text = raw;
+                }
+                text = String(text).replace(/^[\s\S]*?<\/think>/i, "").trim();
+                if (text.length > 20) {
+                  res.statusCode = 200;
+                  res.setHeader("Content-Type", "application/json; charset=utf-8");
+                  res.end(JSON.stringify({ text }));
+                  return;
+                }
+                lastErr = "empty text";
+              } catch (e) {
+                lastErr = (e && e.message) || "proxy error";
+              }
             }
-            let text = "";
+
+            // Last resort: simple GET text API
             try {
-              const data = JSON.parse(raw);
-              text =
-                (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) ||
-                (data && data.choices && data.choices[0] && data.choices[0].text) ||
-                (data && data.text) ||
-                "";
+              const simple = `https://text.pollinations.ai/${encodeURIComponent(String(body.prompt || "Write a short post.").slice(0, 1500))}`;
+              const r = await fetch(simple, {
+                signal: AbortSignal.timeout(90000),
+                headers: { Accept: "text/plain" },
+              });
+              const raw = await r.text();
+              const text = String(raw).replace(/^[\s\S]*?<\/think>/i, "").trim();
+              if (r.ok && text.length > 20) {
+                res.statusCode = 200;
+                res.setHeader("Content-Type", "application/json; charset=utf-8");
+                res.end(JSON.stringify({ text }));
+                return;
+              }
+              lastErr = lastErr || "simple api empty";
             } catch (e) {
-              text = raw;
+              lastErr = (e && e.message) || lastErr || "simple api error";
             }
-            text = String(text).replace(/^[\s\S]*?<\/think>/i, "").trim();
-            res.statusCode = 200;
-            res.setHeader("Content-Type", "application/json; charset=utf-8");
-            res.end(JSON.stringify({ text }));
+
+            res.statusCode = 502;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: lastErr || "upstream failed" }));
           } catch (e) {
             res.statusCode = 500;
             res.setHeader("Content-Type", "application/json; charset=utf-8");

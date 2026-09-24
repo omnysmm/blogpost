@@ -4,7 +4,7 @@ import { translations } from '../i18n/translations';
 import {
   Wand2, FileText, Video, Music, Image, Mic, Film, Sparkles, Check, Loader2,
   Volume2, Globe, Shield, Clock, Calendar, Play, Pause, Trash2, Plus,
-  Share2, AlertCircle, Settings, Scissors, AudioLines, Edit3, Crown
+  Share2, AlertCircle, Settings, Scissors, AudioLines, Edit3, Crown, RotateCcw, ArrowRight, Send
 } from 'lucide-react';
 import SocialIcon from '../components/SocialIcon';
 import RichTextEditor from '../components/RichTextEditor';
@@ -14,7 +14,7 @@ import { generateText, generateImage as aiGenerateImage, generateAudio, checkGen
 import { buildImagePrompt } from '../services/contentEngine';
 import { loadGeneratorPrefs, saveGeneratorPrefs } from '../services/persistence';
 import { publishToTelegram } from '../services/telegram';
-import { getDueIso } from '../services/scheduler';
+import { getDueIso, publishPostToNetworks } from '../services/scheduler';
 import type { Post } from '../store/types';
 
 const standardAiModels = [
@@ -77,11 +77,20 @@ function htmlToPlain(html: string): string {
   return div.textContent || div.innerText || '';
 }
 
+/** First <img src="..."> in HTML (data:/blob:/http). */
+function extractImageSrc(html: string): string | undefined {
+  const m = (html || '').match(/<img[^>]+src=["']([^"']+)["']/i);
+  const src = m?.[1];
+  if (!src) return undefined;
+  return src.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}
+
 export default function ContentGeneratorPage() {
   const {
     language, addPost, currentUser, posts, updatePost, deletePost, moderatePost,
     enqueueForPublish, processDuePosts,
     recordPublication, loadPosts, loadAnalytics, setCurrentPage,
+    restoreFromArchive,
     autoTasks, loadAutoTasks, upsertAutoTask, removeAutoTask, processDueAutoTasks,
   } = useStore();
   const t = translations[language];
@@ -100,6 +109,8 @@ export default function ContentGeneratorPage() {
   const [seoEnabled, setSeoEnabled] = useState(true);
   const [geoEnabled, setGeoEnabled] = useState(true);
   const [moderation, setModeration] = useState(true);
+  /** Checked (default): publish now → archive. Unchecked: send to moderation/queue. */
+  const [skipModeration, setSkipModeration] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [genStatus, setGenStatus] = useState<string | null>(null);
 
@@ -125,7 +136,6 @@ export default function ContentGeneratorPage() {
   const [adPosition, setAdPosition] = useState('inline');
   const [publishStatus, setPublishStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [hoveredNet, setHoveredNet] = useState<string | null>(null);
-  const [modNote, setModNote] = useState<Record<string, string>>({});
   const [expandedPost, setExpandedPost] = useState<string | null>(null);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [showQueueAll, setShowQueueAll] = useState(false);
@@ -252,10 +262,11 @@ export default function ContentGeneratorPage() {
     }
   };
 
-  const handleGenerate = async () => {
-    const hasTopic = !!topic.trim();
-    const hasPrompt = !!userPrompt.trim();
-    if (!hasTopic && !hasPrompt) return;
+  /** Generate from one source only — topic and custom prompt are independent. */
+  const handleGenerate = async (source: 'topic' | 'prompt') => {
+    if (isGenerating) return;
+    const sourceText = (source === 'topic' ? topic : userPrompt).trim();
+    if (!sourceText) return;
     if (currentUser) {
       const { allowed } = await checkGenerationLimit(currentUser.id, currentUser.subscription);
       if (!allowed) {
@@ -264,13 +275,26 @@ export default function ContentGeneratorPage() {
       }
     }
 
+    const isTopicSource = source === 'topic';
+    const label = isTopicSource
+      ? topic.trim()
+      : userPrompt.trim().slice(0, 80);
+    const title = (isTopicSource ? topic.trim() : userPrompt.trim().slice(0, 40)) || 'BlogPost';
+    const topicField = isTopicSource ? topic.trim() : userPrompt.trim().slice(0, 80);
+
     setIsGenerating(true);
-    setGenStatus(ru ? 'Генерируем текст по теме…' : 'Generating text for topic…');
+    setGenStatus(
+      isTopicSource
+        ? (ru ? 'Генерируем текст по теме…' : 'Generating text for topic…')
+        : (ru ? 'Генерируем текст по вашему промпту…' : 'Generating text from your prompt…')
+    );
     setAudioUrl(null);
 
     try {
-      const theme = topic.trim() || userPrompt.trim().slice(0, 80);
-      const prompt = buildPrompt(contentType, theme, userPrompt);
+      // Independent sources: topic mode ignores userPrompt, prompt mode ignores topic
+      const prompt = isTopicSource
+        ? buildPrompt(contentType, topic.trim(), '')
+        : buildPrompt(contentType, userPrompt.trim().slice(0, 120), userPrompt.trim());
       let content = await generateText({
         prompt,
         language,
@@ -283,17 +307,21 @@ export default function ContentGeneratorPage() {
       if (contentType === 'voiceover') setVoiceText(htmlToPlain(content));
       if (contentType === 'editing') setEditNotes(content);
 
-      // Image for the same topic (post / article always when enabled; video/editing optional)
+      // Image for the active source (post / article always when enabled; video/editing optional)
       if (generateImageOpt && supportsImage) {
-        setGenStatus(ru ? `Генерируем изображение по теме «${topic}»…` : `Generating image for «${topic}»…`);
+        setGenStatus(
+          isTopicSource
+            ? (ru ? `Генерируем изображение по теме «${label}»…` : `Generating image for «${label}»…`)
+            : (ru ? 'Генерируем изображение по промпту…' : 'Generating image from your prompt…')
+        );
         try {
-          const imagePrompt = buildImagePrompt(topic, language);
+          const imagePrompt = buildImagePrompt(label, language);
           const imageUrl = await aiGenerateImage({ prompt: imagePrompt, width: 1024, height: 640 });
           if (imageUrl) {
             setGeneratedImage(imageUrl);
             // Escape quotes in attributes; keep query string intact
             const src = imageUrl.replace(/"/g, '&quot;');
-            const alt = topic.replace(/"/g, '');
+            const alt = label.replace(/"/g, '');
             content = `<p><img src="${src}" alt="${alt}" style="max-width:100%;border-radius:12px;display:block" /></p>\n\n${content}`;
           } else {
             setGenStatus(ru ? 'Изображение не удалось создать — текст готов.' : 'Image failed — text is ready.');
@@ -320,7 +348,7 @@ export default function ContentGeneratorPage() {
 
       // Video stub note when video type + generateVideo
       if (contentType === 'video' || generateVideoOpt) {
-        content = `🎬 ${ru ? 'Видеоролик по теме' : 'Video on topic'}: «${topic}»\n\n${content}`;
+        content = `🎬 ${ru ? 'Видеоролик по теме' : 'Video on topic'}: «${label}»\n\n${content}`;
       }
 
       if (includeAd) {
@@ -353,9 +381,9 @@ export default function ContentGeneratorPage() {
       setCurrentPostId(newPostId);
       addPost({
         id: newPostId,
-        title: topic,
+        title,
         content: finalHtml,
-        topic,
+        topic: topicField,
         type: contentType === 'post' || contentType === 'article' || contentType === 'video' || contentType === 'music' ? contentType : 'post',
         status: moderation ? 'moderating' : 'queued',
         createdAt: new Date().toISOString(),
@@ -434,6 +462,83 @@ export default function ContentGeneratorPage() {
     setSelectedNetworks(prev => prev.includes(id) ? prev.filter(n => n !== id) : [...prev, id]);
   };
 
+  /** Instantly publish a queue post to its networks and move it to archive. */
+  const handleInstantPublish = async (p: Post) => {
+    if (!window.confirm(ru ? `Опубликовать «${p.title || p.topic}» сейчас?` : `Publish «${p.title || p.topic}» now?`)) return;
+    try {
+      const { success, errors } = await publishPostToNetworks(p);
+      const nets = success.filter(s => s !== 'local');
+      if (success.length > 0 && errors.length === 0) {
+        updatePost(p.id, {
+          status: 'published',
+          publishedAt: new Date().toISOString(),
+          ...(nets.length ? { socialNetworks: nets } : {}),
+          scheduledAt: null as unknown as string | undefined,
+          scheduledDates: [],
+        });
+        for (const network of nets) {
+          await recordPublication(network, p.id);
+        }
+        await loadPosts();
+        await loadAnalytics();
+        setPublishStatus({
+          type: 'success',
+          text: ru ? `Опубликовано: ${p.title || p.topic}` : `Published: ${p.title || p.topic}`,
+        });
+      } else if (success.length > 0) {
+        updatePost(p.id, {
+          status: 'published',
+          publishedAt: new Date().toISOString(),
+          ...(nets.length ? { socialNetworks: nets } : {}),
+          scheduledAt: null as unknown as string | undefined,
+          scheduledDates: [],
+        });
+        for (const network of nets) {
+          await recordPublication(network, p.id);
+        }
+        await loadPosts();
+        setPublishStatus({
+          type: 'error',
+          text: ru
+            ? `Частично опубликовано. Ошибки:\n${errors.join('\n')}`
+            : `Partially published. Errors:\n${errors.join('\n')}`,
+        });
+      } else {
+        setPublishStatus({
+          type: 'error',
+          text: errors.join('\n') || (ru ? 'Не удалось опубликовать' : 'Publish failed'),
+        });
+      }
+    } catch (e: any) {
+      setPublishStatus({ type: 'error', text: e?.message || 'error' });
+    }
+    setTimeout(() => setPublishStatus(null), 8000);
+  };
+
+  /** Publish Now: skipModeration → archive; otherwise into moderation/queue. */
+  const handlePublishClick = async () => {
+    if (skipModeration) {
+      handleManualSave();
+      await handlePublish();
+      return;
+    }
+    const body = getActiveBody();
+    if (htmlToPlain(body).trim().length < 3 && !uploadedImage) return;
+    const id = handleManualSave();
+    if (id) {
+      updatePost(id, { status: 'moderating' });
+      await loadPosts();
+      setPublishStatus({
+        type: 'success',
+        text: ru
+          ? 'Добавлено в «Модерация и очередь на публикацию»'
+          : 'Added to Moderation & publication queue',
+      });
+      clearGeneratorForm();
+      setTimeout(() => setPublishStatus(null), 8000);
+    }
+  };
+
   const handlePublish = async () => {
     const body = getActiveBody();
     const bodyText = htmlToPlain(body).trim();
@@ -451,7 +556,8 @@ export default function ContentGeneratorPage() {
       }
       try {
         if (network === 'telegram') {
-          const result = await publishToTelegram(topic || 'BlogPost', htmlToPlain(body));
+          const image = uploadedImage || generatedImage || extractImageSrc(body);
+          const result = await publishToTelegram(topic || 'BlogPost', htmlToPlain(body), image || undefined);
           if (result.success) {
             successfulNetworks.push('Telegram');
             successNetworkIds.push('telegram');
@@ -970,25 +1076,26 @@ export default function ContentGeneratorPage() {
                 value={topic}
                 onChange={e => setTopic(e.target.value.slice(0, 200))}
                 rows={3}
+                disabled={isGenerating}
                 onKeyDown={e => {
                   if (e.key === 'Enter' && !e.shiftKey && mode === 'auto') {
                     e.preventDefault();
-                    handleGenerate();
+                    if (!isGenerating && topic.trim()) handleGenerate('topic');
                   }
                 }}
                 placeholder={ru ? 'Например: польза утренней зарядки' : 'e.g.: benefits of morning exercise'}
-                className="w-full p-3 border border-slate-200 rounded-xl text-sm leading-relaxed focus:ring-2 focus:ring-blue-500 outline-none resize-y"
+                className="w-full p-3 border border-slate-200 rounded-xl text-sm leading-relaxed focus:ring-2 focus:ring-blue-500 outline-none resize-y disabled:bg-slate-50 disabled:text-slate-500"
               />
               <div className="mt-3 flex items-center justify-between gap-3">
                 <p className="text-xs text-slate-500">
                   {ru
-                    ? 'Коротко опишите тему материала. Enter — генерация.'
-                    : 'Briefly describe the topic. Enter — generate.'}
+                    ? 'Коротко опишите тему материала. Enter — генерация только по теме.'
+                    : 'Briefly describe the topic. Enter — generate from topic only.'}
                 </p>
                 {mode === 'auto' && (
                   <button
-                    onClick={handleGenerate}
-                    disabled={isGenerating || !(topic.trim() || userPrompt.trim())}
+                    onClick={() => handleGenerate('topic')}
+                    disabled={isGenerating || !topic.trim()}
                     className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium hover:shadow-lg transition disabled:opacity-50 flex items-center gap-2 shrink-0"
                   >
                     {isGenerating ? <><Loader2 size={18} className="animate-spin" /> {t.generating}</> : <><Wand2 size={18} /> {ru ? 'Сгенерировать' : 'Generate'}</>}
@@ -1023,23 +1130,30 @@ export default function ContentGeneratorPage() {
                 value={userPrompt}
                 onChange={e => setUserPrompt(e.target.value.slice(0, 800))}
                 rows={3}
+                disabled={isGenerating}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey && mode === 'auto') {
+                    e.preventDefault();
+                    if (!isGenerating && userPrompt.trim()) handleGenerate('prompt');
+                  }
+                }}
                 placeholder={
                   ru
                     ? 'Например: сделай дружелюбный пост с 3 лайфхаками, без сложных терминов, добавь смайлики…'
                     : 'e.g.: friendly post with 3 tips, no jargon, add emojis…'
                 }
-                className="w-full p-3 border border-slate-200 rounded-xl text-sm leading-relaxed focus:ring-2 focus:ring-blue-500 outline-none resize-y"
+                className="w-full p-3 border border-slate-200 rounded-xl text-sm leading-relaxed focus:ring-2 focus:ring-blue-500 outline-none resize-y disabled:bg-slate-50 disabled:text-slate-500"
               />
               <div className="mt-3 flex items-center justify-between gap-3">
                 <p className="text-xs text-slate-500">
                   {ru
-                    ? 'Дополнительные указания: тон, структура, что включить или исключить.'
-                    : 'Extra instructions: tone, structure, what to include or skip.'}
+                    ? 'Полный промпт: тон, структура, что включить или исключить. Enter — генерация только по промпту. Не зависит от темы выше.'
+                    : 'Full prompt: tone, structure, what to include or skip. Enter — generate from prompt only. Independent of the topic above.'}
                 </p>
                 <button
                   type="button"
-                  onClick={handleGenerate}
-                  disabled={isGenerating || !(topic.trim() || userPrompt.trim())}
+                  onClick={() => handleGenerate('prompt')}
+                  disabled={isGenerating || !userPrompt.trim()}
                   className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium hover:shadow-lg transition disabled:opacity-50 flex items-center gap-2 shrink-0"
                 >
                   {isGenerating ? <><Loader2 size={18} className="animate-spin" /> {t.generating}</> : <><Wand2 size={18} /> {ru ? 'Сгенерировать' : 'Generate'}</>}
@@ -1223,7 +1337,7 @@ export default function ContentGeneratorPage() {
                   </button>
                 </div>
 
-                <div className="flex items-center justify-end gap-3">
+                <div className="flex items-center justify-end gap-3 flex-wrap">
                   {!canPublish && (
                     <span className="text-xs text-slate-400">
                       {activeBodyText.length < 3
@@ -1231,10 +1345,30 @@ export default function ContentGeneratorPage() {
                         : (ru ? 'Выберите хотя бы одну соцсеть' : 'Select at least one network')}
                     </span>
                   )}
+                  <label
+                    className="flex items-center gap-2 cursor-pointer select-none text-sm text-slate-700"
+                    title={ru
+                      ? 'С галочкой — публикация сразу в архив. Без галочки — в очередь на модерацию.'
+                      : 'Checked — publish straight to archive. Unchecked — send to moderation queue.'}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={skipModeration}
+                      onChange={e => setSkipModeration(e.target.checked)}
+                      className="w-4 h-4 text-blue-500 rounded"
+                    />
+                    {ru ? 'Не модерировать' : 'Skip moderation'}
+                  </label>
                   <button
-                    onClick={async () => { handleManualSave(); await handlePublish(); }}
+                    onClick={handlePublishClick}
                     disabled={!canPublish}
-                    title={canPublish ? (ru ? 'Опубликовать' : 'Publish') : (ru ? 'Нужен текст от 3 символов' : 'Need at least 3 characters')}
+                    title={
+                      !canPublish
+                        ? (ru ? 'Нужен текст от 3 символов' : 'Need at least 3 characters')
+                        : skipModeration
+                          ? (ru ? 'Опубликовать сразу в архив' : 'Publish to archive now')
+                          : (ru ? 'Отправить в очередь на модерацию' : 'Send to moderation queue')
+                    }
                     className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium hover:shadow-lg transition disabled:opacity-50 flex items-center gap-2"
                   >
                     <Share2 size={18} /> {t.publishNow}
@@ -1246,7 +1380,7 @@ export default function ContentGeneratorPage() {
             {/* ═══ QUEUE (under Generation result, right content) ═══ */}
             <div className="bg-white rounded-xl p-5 border border-slate-100">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold text-slate-900">{ru ? 'Очередь на публикацию' : 'Publication queue'}</h3>
+                <h3 className="font-bold text-slate-900">{ru ? 'Модерация и очередь на публикацию' : 'Moderation & publication queue'}</h3>
                 <button
                   onClick={async () => {
                     const n = await processDuePosts();
@@ -1309,21 +1443,38 @@ export default function ContentGeneratorPage() {
                                 <Trash2 size={12} />
                               </button>
                             </div>
-                            {canModerate && (p.status === 'moderating' || p.status === 'rejected' || p.status === 'ready') && (
+                            {canModerate && (p.status === 'moderating' || p.status === 'rejected' || p.status === 'ready') ? (
                               <div className="flex gap-1">
                                 <button
-                                  onClick={() => moderatePost(p.id, 'approve', modNote[p.id] || 'Одобрено')}
+                                  onClick={() => moderatePost(p.id, 'approve', 'Одобрено')}
                                   className="text-xs px-2 py-1 bg-green-50 text-green-700 rounded hover:bg-green-100"
                                   title={ru ? 'Одобрить' : 'Approve'}
                                 >
                                   <Check size={12} />
                                 </button>
                                 <button
-                                  onClick={() => moderatePost(p.id, 'reject', modNote[p.id] || 'Отклонено модератором')}
+                                  onClick={() => moderatePost(p.id, 'reject', 'Отклонено модератором')}
                                   className="text-xs px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100"
                                   title={ru ? 'Отклонить' : 'Reject'}
                                 >
                                   ✕
+                                </button>
+                                <button
+                                  onClick={() => handleInstantPublish(p)}
+                                  className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 flex items-center gap-1"
+                                  title={ru ? 'Опубликовать сейчас' : 'Publish now'}
+                                >
+                                  <ArrowRight size={12} />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={() => handleInstantPublish(p)}
+                                  className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 flex items-center gap-1"
+                                  title={ru ? 'Опубликовать сейчас' : 'Publish now'}
+                                >
+                                  <ArrowRight size={12} />
                                 </button>
                               </div>
                             )}
@@ -1353,28 +1504,30 @@ export default function ContentGeneratorPage() {
                               className="text-xs text-slate-700 bg-slate-50 rounded p-2 max-h-40 overflow-y-auto"
                               dangerouslySetInnerHTML={{ __html: p.content }}
                             />
-                            {canModerate && (
-                              <div className="flex gap-2 flex-wrap">
-                                <input
-                                  value={modNote[p.id] || ''}
-                                  onChange={e => setModNote(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                  placeholder={ru ? 'Комментарий модерации…' : 'Moderation note…'}
-                                  className="flex-1 min-w-[160px] p-2 border border-slate-200 rounded text-xs"
-                                />
-                                <button
-                                  onClick={() => moderatePost(p.id, 'approve', modNote[p.id] || 'Одобрено')}
-                                  className="px-3 py-1.5 bg-green-500 text-white text-xs rounded-lg"
-                                >
-                                  {ru ? 'Одобрить' : 'Approve'}
-                                </button>
-                                <button
-                                  onClick={() => moderatePost(p.id, 'reject', modNote[p.id] || 'Отклонено')}
-                                  className="px-3 py-1.5 bg-red-500 text-white text-xs rounded-lg"
-                                >
-                                  {ru ? 'Отклонить' : 'Reject'}
-                                </button>
-                              </div>
-                            )}
+                            <div className="flex gap-2 flex-wrap">
+                              <button
+                                onClick={() => handleInstantPublish(p)}
+                                className="px-3 py-1.5 bg-blue-500 text-white text-xs rounded-lg flex items-center gap-1"
+                              >
+                                <Send size={12} /> {ru ? 'Опубликовать' : 'Publish'}
+                              </button>
+                              {canModerate && (
+                                <>
+                                  <button
+                                    onClick={() => moderatePost(p.id, 'approve', 'Одобрено')}
+                                    className="px-3 py-1.5 bg-green-500 text-white text-xs rounded-lg"
+                                  >
+                                    {ru ? 'Одобрить' : 'Approve'}
+                                  </button>
+                                  <button
+                                    onClick={() => moderatePost(p.id, 'reject', 'Отклонено')}
+                                    className="px-3 py-1.5 bg-red-500 text-white text-xs rounded-lg"
+                                  >
+                                    {ru ? 'Отклонить' : 'Reject'}
+                                  </button>
+                                </>
+                              )}
+                            </div>
                             <button
                               onClick={() => {
                                 if (window.confirm(ru ? 'Удалить этот пост из очереди?' : 'Delete this post from queue?')) {
@@ -1425,7 +1578,32 @@ export default function ContentGeneratorPage() {
                           {p.socialNetworks?.length ? ` • ${p.socialNetworks.join(', ')}` : ''}
                         </p>
                       </div>
-                      {statusBadge(p.status)}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {statusBadge(p.status)}
+                        <button
+                          onClick={() => {
+                            if (window.confirm(
+                              ru
+                                ? `Вернуть «${p.title || p.topic}» из архива в очередь на публикацию? Расписание будет сброшено.`
+                                : `Restore «${p.title || p.topic}» from archive to the publish queue? Schedule will be reset.`
+                            )) {
+                              restoreFromArchive(p.id);
+                              setPublishStatus({
+                                type: 'success',
+                                text: ru
+                                  ? `«${p.title || p.topic}» — восстановлено в очередь. Расписание сброшено.`
+                                  : `«${p.title || p.topic}» — restored to queue. Schedule reset.`,
+                              });
+                              setTimeout(() => setPublishStatus(null), 6000);
+                            }
+                          }}
+                          className="text-xs px-2 py-1 bg-amber-50 text-amber-700 rounded hover:bg-amber-100 font-medium flex items-center gap-1"
+                          title={ru ? 'Восстановить в очередь (сброс расписания)' : 'Restore to queue (reset schedule)'}
+                        >
+                          <RotateCcw size={12} />
+                          {ru ? 'В очередь' : 'To queue'}
+                        </button>
+                      </div>
                     </div>
                   ))}
                   {hiddenArchiveCount > 0 && (

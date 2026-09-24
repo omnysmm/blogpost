@@ -53,6 +53,7 @@ interface AppState {
   resetNetworkPublications: (network: string) => void;
   moderatePost: (id: string, action: 'approve' | 'reject', note?: string) => void;
   enqueueForPublish: (id: string, scheduledAt?: string, scheduledDates?: string[], scheduledTime?: string, networks?: string[]) => void;
+  restoreFromArchive: (id: string) => void;
   processDuePosts: () => Promise<number>;
   autoTasks: AutoTask[];
   loadAutoTasks: () => void;
@@ -177,7 +178,19 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   updatePost: (id, updates) => {
-    const posts = get().posts.map(p => p.id === id ? { ...p, ...updates } : p);
+    // Allow null to clear optional fields (publishedAt / scheduledAt)
+    const cleaned: Partial<Post> = { ...updates };
+    if ('publishedAt' in cleaned && cleaned.publishedAt == null) cleaned.publishedAt = undefined as any;
+    if ('scheduledAt' in cleaned && cleaned.scheduledAt == null) cleaned.scheduledAt = undefined as any;
+
+    const posts = get().posts.map(p => {
+      if (p.id !== id) return p;
+      const next: Post = { ...p, ...cleaned };
+      // Explicit null clears the field locally
+      if ('publishedAt' in updates && updates.publishedAt == null) next.publishedAt = undefined;
+      if ('scheduledAt' in updates && updates.scheduledAt == null) next.scheduledAt = undefined;
+      return next;
+    });
     set({ posts });
     const user = get().currentUser;
     if (user) {
@@ -185,8 +198,8 @@ export const useStore = create<AppState>((set, get) => ({
       if (isSupabaseConfigured) {
         const row: any = { ...updates };
         if (updates.socialNetworks) row.social_networks = updates.socialNetworks;
-        if (updates.publishedAt !== undefined) row.published_at = updates.publishedAt;
-        if (updates.scheduledAt !== undefined) row.scheduled_at = updates.scheduledAt;
+        if ('publishedAt' in updates) row.published_at = updates.publishedAt ?? null;
+        if ('scheduledAt' in updates) row.scheduled_at = updates.scheduledAt ?? null;
         if (updates.hasAudio !== undefined) row.has_audio = updates.hasAudio;
         if (updates.hasVideo !== undefined) row.has_video = updates.hasVideo;
         if (updates.hasImage !== undefined) row.has_image = updates.hasImage;
@@ -199,6 +212,8 @@ export const useStore = create<AppState>((set, get) => ({
         delete row.hasImage;
         delete row.aiModel;
         delete row.createdAt;
+        delete row.scheduledDates;
+        delete row.scheduledTime;
         crudUpdatePost(id, row).catch(() => {});
       }
     }
@@ -514,6 +529,23 @@ export const useStore = create<AppState>((set, get) => ({
       updates.status = 'moderating';
     }
     get().updatePost(id, updates);
+  },
+
+  // ═══ Restore published post from archive back to publish queue ═══
+  // Clears schedule (scheduledAt / scheduledDates / scheduledTime) and publishedAt
+  restoreFromArchive: (id) => {
+    const post = get().posts.find(p => p.id === id);
+    if (!post) {
+      console.warn('restoreFromArchive: post not found', id);
+      return;
+    }
+    get().updatePost(id, {
+      status: 'queued',
+      publishedAt: null as unknown as string | undefined,
+      scheduledAt: null as unknown as string | undefined,
+      scheduledDates: [],
+      scheduledTime: '',
+    });
   },
 
   // ═══ Auto-publish due posts (called by scheduler tick) ═══

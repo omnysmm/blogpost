@@ -1,5 +1,6 @@
 // Telegram Bot API Service
-// Uses Supabase Edge Function as proxy (avoids CORS issues)
+// Tries Supabase Edge Function first, falls back to direct Bot API
+// (needed for blob:/data: images that Telegram cannot fetch by URL)
 
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
@@ -46,7 +47,124 @@ async function getTelegramConfig(): Promise<{ token: string; chatId: string } | 
   return null;
 }
 
-// ═══ Publish to Telegram via Edge Function ═══
+function isHttpUrl(s: string): boolean {
+  return /^https?:\/\//i.test(s);
+}
+
+/** Convert blob:/data:/relative image source to base64 (no data: prefix). */
+async function imageToBase64(src: string): Promise<{ base64: string; mime: string } | null> {
+  try {
+    let blob: Blob;
+    if (src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('/') || src.startsWith('./')) {
+      const res = await fetch(src);
+      if (!res.ok) return null;
+      blob = await res.blob();
+    } else {
+      return null;
+    }
+    if (!blob || blob.size === 0) return null;
+
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('FileReader failed'));
+      reader.readAsDataURL(blob);
+    });
+    const comma = dataUrl.indexOf(',');
+    if (comma < 0) return null;
+    const meta = dataUrl.slice(5, comma);
+    const mime = (meta.split(';')[0] || 'image/jpeg').trim() || 'image/jpeg';
+    return { base64: dataUrl.slice(comma + 1), mime };
+  } catch {
+    return null;
+  }
+}
+
+/** Resolve image for Telegram: public URL as-is, local (blob/data) as base64. */
+async function resolveImage(imageUrl?: string): Promise<
+  | { kind: 'url'; url: string }
+  | { kind: 'bytes'; base64: string; mime: string }
+  | null
+> {
+  if (!imageUrl) return null;
+  if (isHttpUrl(imageUrl)) return { kind: 'url', url: imageUrl };
+  const bytes = await imageToBase64(imageUrl);
+  if (bytes) return { kind: 'bytes', ...bytes };
+  return null;
+}
+
+// ═══ Direct Telegram Bot API (browser CORS is allowed by api.telegram.org) ═══
+async function callTelegramJson(token: string, method: string, body: Record<string, any>): Promise<any> {
+  const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+async function callTelegramForm(token: string, method: string, form: FormData): Promise<any> {
+  const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: 'POST',
+    body: form,
+  });
+  return res.json();
+}
+
+function toResult(api: any): TelegramPublishResult {
+  if (api?.ok) {
+    return { success: true, messageId: api.result?.message_id };
+  }
+  return { success: false, error: api?.description || 'Неизвестная ошибка Telegram' };
+}
+
+async function sendDirect(
+  token: string,
+  chatId: string,
+  text: string,
+  image: Awaited<ReturnType<typeof resolveImage>>
+): Promise<TelegramPublishResult> {
+  const caption = (text || '').slice(0, 1024);
+  const rest = (text || '').slice(1024);
+
+  let result: any;
+  if (image?.kind === 'bytes') {
+    const binary = atob(image.base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const form = new FormData();
+    form.append('chat_id', chatId);
+    form.append('caption', caption);
+    form.append('parse_mode', 'HTML');
+    form.append('photo', new Blob([bytes], { type: image.mime || 'image/jpeg' }), 'image.jpg');
+    result = await callTelegramForm(token, 'sendPhoto', form);
+  } else if (image?.kind === 'url') {
+    result = await callTelegramJson(token, 'sendPhoto', {
+      chat_id: chatId,
+      photo: image.url,
+      caption,
+      parse_mode: 'HTML',
+    });
+  } else {
+    result = await callTelegramJson(token, 'sendMessage', {
+      chat_id: chatId,
+      text: (text || '').slice(0, 4096),
+      parse_mode: 'HTML',
+    });
+  }
+
+  const primary = toResult(result);
+  if (primary.success && rest.trim()) {
+    await callTelegramJson(token, 'sendMessage', {
+      chat_id: chatId,
+      text: rest.slice(0, 4096),
+      parse_mode: 'HTML',
+    });
+  }
+  return primary;
+}
+
+// ═══ Publish to Telegram via Edge Function (fallback: direct Bot API) ═══
 export async function publishToTelegram(
   title: string,
   content: string,
@@ -64,7 +182,18 @@ export async function publishToTelegram(
   // Format message
   const formattedText = `<b>${escapeHtml(title)}</b>\n\n${escapeHtml(content).slice(0, 4000)}`;
 
-  // Try Edge Function first
+  const image = await resolveImage(imageUrl);
+
+  // Prefer direct Bot API when we must upload binary (blob:/data: images)
+  if (image?.kind === 'bytes') {
+    try {
+      return await sendDirect(config.token, config.chatId, formattedText, image);
+    } catch (err: any) {
+      return { success: false, error: `Не удалось отправить изображение: ${err.message}` };
+    }
+  }
+
+  // Try Edge Function first (public URL images / text-only)
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   if (supabaseUrl) {
     try {
@@ -78,17 +207,33 @@ export async function publishToTelegram(
           token: config.token,
           chatId: config.chatId,
           text: formattedText,
-          imageUrl,
+          imageUrl: image?.kind === 'url' ? image.url : undefined,
         }),
       });
       const data = await response.json();
-      return data;
+      if (data?.success) return data;
+
+      // Edge failed (e.g. old function without image upload) → try direct
+      try {
+        return await sendDirect(config.token, config.chatId, formattedText, image);
+      } catch {
+        return data;
+      }
     } catch (err: any) {
-      return { success: false, error: `Не удалось подключиться к серверу: ${err.message}` };
+      // Network/CORS to edge → try direct Bot API
+      try {
+        return await sendDirect(config.token, config.chatId, formattedText, image);
+      } catch {
+        return { success: false, error: `Не удалось подключиться к серверу: ${err.message}` };
+      }
     }
   }
 
-  return { success: false, error: 'Supabase не настроен. Настройте подключение для публикации.' };
+  try {
+    return await sendDirect(config.token, config.chatId, formattedText, image);
+  } catch (err: any) {
+    return { success: false, error: `Не удалось отправить в Telegram: ${err.message}` };
+  }
 }
 
 // ═══ Save Telegram config to Supabase ═══

@@ -21,6 +21,14 @@ function stripHtml(html: string): string {
   return div.textContent || div.innerText || '';
 }
 
+/** First <img src="..."> in post HTML (data:/blob:/http). */
+function extractImageSrc(html: string): string | undefined {
+  const m = (html || '').match(/<img[^>]+src=["']([^"']+)["']/i);
+  const src = m?.[1];
+  if (!src) return undefined;
+  return src.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}
+
 function parseLocalDateTime(date: string, time: string): number {
   // date: YYYY-MM-DD, time: HH:MM
   const t = time && time.length >= 5 ? time.slice(0, 5) : '10:00';
@@ -92,6 +100,7 @@ export async function publishPostToNetworks(post: Post): Promise<{ success: stri
   const errors: string[] = [];
   const title = post.title || post.topic || 'BlogPost';
   const text = stripHtml(post.content || '');
+  const imageSrc = extractImageSrc(post.content || '');
 
   if (networks.length === 0) {
     // Local-only publish so schedule pipeline still completes
@@ -102,7 +111,7 @@ export async function publishPostToNetworks(post: Post): Promise<{ success: stri
   for (const network of networks) {
     try {
       if (network === 'telegram' && connected.telegram) {
-        const result = await publishToTelegram(title, text);
+        const result = await publishToTelegram(title, text, imageSrc);
         if (result.success) success.push('telegram');
         else errors.push(`Telegram: ${result.error}`);
       } else {

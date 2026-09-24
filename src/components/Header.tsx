@@ -59,7 +59,7 @@ export default function Header() {
 
           <div className="flex items-center gap-2">
             <div className="relative">
-              <button onClick={() => { setShowLangMenu(!showLangMenu); setShowCurrMenu(false); }} className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-slate-100 text-sm">
+              <button onClick={() => setShowLangMenu(!showLangMenu)} className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-slate-100 text-sm">
                 <Globe size={16} />
                 <span>{language === 'ru' ? 'RU' : 'EN'}</span>
               </button>

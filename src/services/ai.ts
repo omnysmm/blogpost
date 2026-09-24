@@ -27,6 +27,32 @@ interface GenerateAudioOptions {
   speed?: number;
 }
 
+function extractLlmText(raw: string): string {
+  let text = '';
+  try {
+    const data = JSON.parse(raw);
+    text =
+      data?.choices?.[0]?.message?.content ||
+      data?.choices?.[0]?.text ||
+      data?.text ||
+      data?.message?.content ||
+      '';
+    if (!text && typeof data?.choices?.[0]?.message?.reasoning === 'string') {
+      text = data.choices[0].message.reasoning;
+    }
+    if (!text && Array.isArray(data?.choices)) {
+      text = data.choices.map((c: any) => c?.message?.content || c?.text || '').join('\n');
+    }
+  } catch {
+    text = raw;
+  }
+  return String(text)
+    .replace(/^[\s\S]*?<\/think>/i, '')
+    .replace(/^```[a-z]*\n?/i, '')
+    .replace(/\n?```$/i, '')
+    .trim();
+}
+
 // ═══ Text Generation ═══
 export async function generateText(options: GenerateTextOptions): Promise<string> {
   const { prompt, maxLength = 2000, language = 'ru' } = options;
@@ -43,6 +69,9 @@ export async function generateText(options: GenerateTextOptions): Promise<string
 Always include: (1) engagement hooks, (2) SEO keywords, (3) hashtag #BlogPost, (4) clear CTA (like/comment/save/share).
 Max ${maxLength} chars. Ready material only.`;
 
+  const MIN_LEN = 40;
+  const accept = (t: string) => (t && t.length > MIN_LEN ? ensureSeoEngagement(t, language) : null);
+
   // 1) Local Vite middleware (server-side LLM) — most reliable
   try {
     const res = await fetch('/api/generate', {
@@ -52,8 +81,9 @@ Max ${maxLength} chars. Ready material only.`;
     });
     const data = await res.json();
     const text = String(data?.text || '').trim();
-    if (res.ok && text.length > 40) return ensureSeoEngagement(text, language);
-    console.warn('Vite /api/generate returned weak result', res.status, data?.error);
+    const ok = res.ok ? accept(text) : null;
+    if (ok) return ok;
+    console.warn('Vite /api/generate returned weak result', res.status, data?.error, text.slice(0, 80));
   } catch (e) {
     console.warn('Vite /api/generate failed:', e);
   }
@@ -63,6 +93,7 @@ Max ${maxLength} chars. Ready material only.`;
     { url: '/api/llm/openai', model: 'openai' },
     { url: '/api/llm/openai', model: 'openai-fast' },
     { url: 'https://text.pollinations.ai/openai', model: 'openai' },
+    { url: 'https://text.pollinations.ai/openai', model: 'openai-fast' },
   ];
   for (const t of tries) {
     try {
@@ -75,9 +106,35 @@ Max ${maxLength} chars. Ready material only.`;
         max_tokens: 1200,
         temperature: 0.7,
       });
-      if (text && text.length > 40) return ensureSeoEngagement(text, language);
+      const ok = accept(text);
+      if (ok) return ok;
     } catch (e) {
       console.warn(`LLM ${t.model} @ ${t.url} failed:`, e);
+    }
+  }
+
+  // 3) Simple GET text API (no CORS / no chat schema) — last resort
+  for (const base of [
+    '/api/llm/',
+    'https://text.pollinations.ai/',
+  ]) {
+    try {
+      const ctrl = new AbortController();
+      const timer = window.setTimeout(() => ctrl.abort(), 90_000);
+      const url = base.endsWith('/')
+        ? `${base}${encodeURIComponent(`${systemPrompt}\n\n${prompt}`)}`
+        : base;
+      const res = await fetch(url, {
+        signal: ctrl.signal,
+        headers: { Accept: 'text/plain' },
+      });
+      window.clearTimeout(timer);
+      if (!res.ok) continue;
+      const raw = await res.text();
+      const ok = accept(extractLlmText(raw));
+      if (ok) return ok;
+    } catch (e) {
+      console.warn('Simple LLM GET failed:', base, e);
     }
   }
 
@@ -117,18 +174,7 @@ async function postOpenAI(endpoint: string, body: Record<string, unknown>): Prom
     });
     if (!res.ok) throw new Error(`LLM HTTP ${res.status}`);
     const raw = await res.text();
-    let text = '';
-    try {
-      const data = JSON.parse(raw);
-      text = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || data?.text || '';
-    } catch {
-      text = raw;
-    }
-    return String(text)
-      .replace(/^[\s\S]*?<\/think>/i, '')
-      .replace(/^```[a-z]*\n?/i, '')
-      .replace(/\n?```$/i, '')
-      .trim();
+    return extractLlmText(raw);
   } finally {
     window.clearTimeout(timer);
   }
@@ -157,7 +203,15 @@ export async function generateImage(options: GenerateImageOptions): Promise<stri
       window.clearTimeout(timer);
       if (res.ok) {
         const blob = await res.blob();
-        if (blob.size > 400) return URL.createObjectURL(blob);
+        // data: URL — survives reload and can be uploaded to Telegram (blob: cannot)
+        if (blob.size > 400) {
+          return await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(reader.error || new Error('Image read failed'));
+            reader.readAsDataURL(blob);
+          });
+        }
       }
     } catch (e) {
       console.warn('Image fetch failed for', url, e);

@@ -1,5 +1,6 @@
 // Supabase Edge Function: telegram-publish
 // Proxies Telegram Bot API calls (avoids CORS issues from browser)
+// Supports photo as public URL (imageUrl) or binary upload (imageBase64)
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 
@@ -15,7 +16,7 @@ serve(async (req) => {
   }
 
   try {
-    const { token, chatId, text, imageUrl } = await req.json()
+    const { token, chatId, text, imageUrl, imageBase64, imageMime } = await req.json()
 
     if (!token) {
       return jsonResponse({ success: false, error: 'Не указан токен бота Telegram' }, 400)
@@ -24,26 +25,59 @@ serve(async (req) => {
       return jsonResponse({ success: false, error: 'Не указан Chat ID' }, 400)
     }
 
+    const fullText = text || ''
+    const caption = fullText.slice(0, 1024)
+    const rest = fullText.slice(1024)
+
     let result: any
 
-    if (imageUrl) {
-      // Send photo with caption
+    if (imageBase64) {
+      // Upload photo bytes (blob:/data: sources converted on client)
+      const binary = atob(imageBase64)
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+
+      const form = new FormData()
+      form.append('chat_id', String(chatId))
+      form.append('caption', caption)
+      form.append('parse_mode', 'HTML')
+      form.append(
+        'photo',
+        new Blob([bytes], { type: imageMime || 'image/jpeg' }),
+        'image.jpg'
+      )
+
+      const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+        method: 'POST',
+        body: form,
+      })
+      result = await response.json()
+    } else if (imageUrl) {
+      // Send photo with caption (Telegram downloads the public URL)
       result = await callTelegram(token, 'sendPhoto', {
         chat_id: chatId,
         photo: imageUrl,
-        caption: (text || '').slice(0, 1024),
+        caption,
         parse_mode: 'HTML',
       })
     } else {
       // Send text message
       result = await callTelegram(token, 'sendMessage', {
         chat_id: chatId,
-        text: (text || '').slice(0, 4096),
+        text: fullText.slice(0, 4096),
         parse_mode: 'HTML',
       })
     }
 
     if (result.ok) {
+      // Caption max is 1024 — send the rest as a follow-up text message
+      if (rest.trim()) {
+        await callTelegram(token, 'sendMessage', {
+          chat_id: chatId,
+          text: rest.slice(0, 4096),
+          parse_mode: 'HTML',
+        })
+      }
       return jsonResponse({
         success: true,
         messageId: result.result?.message_id,
@@ -72,6 +106,7 @@ function translateTelegramError(msg: string): string {
   if (lower.includes('chat not found')) return 'Чат не найден. Проверьте Chat ID и убедитесь, что бот добавлен в канал/группу.'
   if (lower.includes('bot was blocked')) return 'Бот заблокирован пользователем. Попросите пользователя разблокировать бота.'
   if (lower.includes('not enough rights')) return 'У бота недостаточно прав. Назначьте бота администратором канала/группы.'
+  if (lower.includes('bad request: photo')) return 'Не удалось загрузить изображение. Проверьте файл (JPEG/PNG, до 10 МБ).'
   if (lower.includes('bad request')) return 'Неверный запрос. Проверьте формат сообщения и Chat ID.'
   if (lower.includes('unauthorized')) return 'Неверный токен бота. Проверьте API Key в настройках.'
   if (lower.includes('forbidden')) return 'Доступ запрещён. Бот не имеет прав на отправку сообщений в этот чат.'
