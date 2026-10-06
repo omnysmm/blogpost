@@ -37,8 +37,7 @@ export const NETWORK_CONFIG: Record<SocialNetwork, { name: string; color: string
 };
 
 // ═══ OAuth Connection ═══
-export function initiateOAuth(network: SocialNetwork): void {
-  const config = NETWORK_CONFIG[network];
+export function initiateOAuth(network: SocialNetwork, userId?: string): void {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
   if (!supabaseUrl) {
@@ -46,9 +45,19 @@ export function initiateOAuth(network: SocialNetwork): void {
     return;
   }
 
+  if (network === 'telegram') {
+    // Telegram uses Bot API token in Settings — no OAuth redirect
+    console.warn('Telegram connects via Bot token in Settings → Соцсети');
+    return;
+  }
+
   // Redirect to Supabase Edge Function which handles OAuth flow
-  const redirectUrl = `${supabaseUrl}/functions/v1/social-oauth?network=${network}&redirect=${encodeURIComponent(window.location.origin)}`;
-  window.location.href = redirectUrl;
+  const params = new URLSearchParams({
+    network,
+    redirect: window.location.origin + '/#/settings',
+  });
+  if (userId) params.set('user_id', userId);
+  window.location.href = `${supabaseUrl}/functions/v1/social-oauth?${params}`;
 }
 
 // ═══ Get Connected Accounts ═══
@@ -56,11 +65,20 @@ export async function getConnectedAccounts(userId: string): Promise<SocialAccoun
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
   if (!supabaseUrl) {
-    // Return mock data for development
-    return [
-      { network: 'vk', accountName: 'Моя страница VK', connected: true, connectedAt: '2024-03-01' },
-      { network: 'telegram', accountName: '@mychannel', connected: true, connectedAt: '2024-03-05' },
-    ];
+    // Offline: read SettingsPage localStorage
+    try {
+      const raw = localStorage.getItem('blogpost_socials');
+      if (!raw) return [];
+      return (JSON.parse(raw) as any[])
+        .filter((s) => s.connected)
+        .map((s) => ({
+          network: s.network,
+          accountName: s.login || s.name || s.network,
+          connected: true,
+        }));
+    } catch {
+      return [];
+    }
   }
 
   try {
@@ -120,10 +138,21 @@ export async function publishContent(userId: string, options: PublishOptions): P
 async function publishToNetwork(userId: string, network: SocialNetwork, options: PublishOptions): Promise<{ postId?: string }> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
+  // Telegram has a dedicated, proven path
+  if (network === 'telegram') {
+    const { publishToTelegram } = await import('./telegram');
+    const title = options.content.slice(0, 80).replace(/\n+/g, ' ');
+    const body = options.content;
+    const result = await publishToTelegram(title, body, options.imageUrl);
+    if (!result.success) throw new Error(result.error || 'Telegram publish failed');
+    return { postId: result.messageId != null ? String(result.messageId) : undefined };
+  }
+
   if (!supabaseUrl) {
-    // Mock: simulate successful publish
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return { postId: `mock-${Date.now()}` };
+    // Dev-only: simulate so UI is testable without backend
+    console.warn(`[dev] social-publish skipped for ${network} (no Supabase)`);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    return { postId: `local-${Date.now()}` };
   }
 
   const response = await fetch(`${supabaseUrl}/functions/v1/social-publish`, {
@@ -132,11 +161,20 @@ async function publishToNetwork(userId: string, network: SocialNetwork, options:
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
     },
-    body: JSON.stringify({ userId, network, ...options }),
+    body: JSON.stringify({
+      userId,
+      network,
+      content: options.content,
+      imageUrl: options.imageUrl,
+      videoUrl: options.videoUrl,
+    }),
   });
 
-  if (!response.ok) throw new Error(`Publish to ${network} failed`);
-  return response.json();
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.error) {
+    throw new Error(data.error || `Publish to ${network} failed (${response.status})`);
+  }
+  return { postId: data.postId };
 }
 
 // ═══ Schedule Publication ═══

@@ -1,39 +1,61 @@
 import { useState, useEffect } from 'react';
 import { useStore, UserRole, Subscription } from '../store/useStore';
 import { translations } from '../i18n/translations';
-import { Shield, Users, Settings, FileText, Eye, Ban, Check, Search, RefreshCw } from 'lucide-react';
+import { Shield, Users, Settings, FileText, Eye, Ban, Check, Search, RefreshCw, UserCheck } from 'lucide-react';
+import { banUser } from '../services/crud';
 
 export default function AdminPage() {
-  const { language, currentUser, platformStats, allUsers, loadPlatformStats, loadAllUsers } = useStore();
+  const {
+    language, platformStats, allUsers, posts,
+    loadPlatformStats, loadAllUsers, loadPosts, moderatePost,
+  } = useStore();
   const t = translations[language];
   const [activeTab, setActiveTab] = useState('users');
   const [searchQuery, setSearchQuery] = useState('');
+  const [banning, setBanning] = useState<string | null>(null);
 
   useEffect(() => {
     loadPlatformStats();
     loadAllUsers();
+    loadPosts();
   }, []);
 
-  const mockUsers = [
-    { id: '1', name: 'Иван Петров', email: 'ivan@mail.ru', role: 'user' as UserRole, subscription: 'pro' as Subscription, registered: '2024-01-15', status: 'active' },
-    { id: '2', name: 'Мария Сидорова', email: 'maria@gmail.com', role: 'user' as UserRole, subscription: 'basic' as Subscription, registered: '2024-02-20', status: 'active' },
-    { id: '3', name: 'Алексей Козлов', email: 'alex@yandex.ru', role: 'advertiser' as UserRole, subscription: 'premium' as Subscription, registered: '2024-01-05', status: 'active' },
-    { id: '4', name: 'Елена Волкова', email: 'elena@mail.ru', role: 'user' as UserRole, subscription: 'free' as Subscription, registered: '2024-03-01', status: 'banned' },
-    { id: '5', name: 'Дмитрий Новиков', email: 'dmitry@bk.ru', role: 'user' as UserRole, subscription: 'pro' as Subscription, registered: '2024-02-10', status: 'active' },
-  ];
+  const displayUsers = allUsers.map((u: any) => ({
+    id: u.id,
+    name: u.name || u.email || '—',
+    email: u.email || '',
+    role: (u.role || 'user') as UserRole,
+    subscription: (u.subscription || 'free') as Subscription,
+    registered: (u.created_at || u.registeredAt || '').split('T')[0],
+    status: u.role === 'banned' ? 'banned' : 'active',
+  }));
 
-  const displayUsers = allUsers.length > 0
-    ? allUsers.map((u: any) => ({ ...u, registered: u.created_at?.split('T')[0] || '', status: u.role === 'banned' ? 'banned' : 'active' }))
-    : mockUsers;
+  const displayContent = posts.map((p) => ({
+    id: p.id,
+    title: p.title || '—',
+    author: p.topic || '—',
+    status:
+      p.status === 'moderating' || p.status === 'ready' ? 'pending' :
+      p.status === 'rejected' ? 'rejected' : 'approved',
+    date: (p.createdAt || '').split('T')[0],
+  }));
 
-  const mockContent = [
-    { id: '1', title: 'Как начать блог', author: 'Иван Петров', status: 'approved', date: '2024-03-15' },
-    { id: '2', title: 'Топ-10 тем для YouTube', author: 'Мария Сидорова', status: 'pending', date: '2024-03-16' },
-    { id: '3', title: 'Монетизация блога', author: 'Алексей Козлов', status: 'approved', date: '2024-03-14' },
-    { id: '4', title: 'Запрещённый контент', author: 'Елена Волкова', status: 'rejected', date: '2024-03-16' },
-  ];
+  const filteredUsers = displayUsers.filter(
+    u =>
+      u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-  const filteredUsers = displayUsers.filter(u => u.name.toLowerCase().includes(searchQuery.toLowerCase()) || u.email.toLowerCase().includes(searchQuery.toLowerCase()));
+  const handleBan = async (userId: string, currentlyBanned: boolean) => {
+    setBanning(userId);
+    try {
+      await banUser(userId);
+      await loadAllUsers();
+    } finally {
+      setBanning(null);
+    }
+    void currentlyBanned;
+  };
 
   const tabs = [
     { id: 'users', icon: Users, label: t.users },
@@ -51,6 +73,13 @@ export default function AdminPage() {
           <h1 className="text-2xl font-bold text-slate-900">{t.admin}</h1>
           <p className="text-sm text-slate-500">{language === 'ru' ? 'Полное управление платформой' : 'Full platform management'}</p>
         </div>
+        <button
+          onClick={() => { loadPlatformStats(); loadAllUsers(); loadPosts(); }}
+          className="ml-auto p-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600"
+          title={language === 'ru' ? 'Обновить' : 'Refresh'}
+        >
+          <RefreshCw size={16} />
+        </button>
       </div>
 
       {/* Admin Stats */}
@@ -104,6 +133,11 @@ export default function AdminPage() {
               />
             </div>
           </div>
+          {filteredUsers.length === 0 ? (
+            <div className="p-10 text-center text-slate-500">
+              {language === 'ru' ? 'Пользователи появятся после подключения Supabase' : 'Users will appear after Supabase is connected'}
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-slate-50">
@@ -122,11 +156,7 @@ export default function AdminPage() {
                     <td className="p-4 font-medium text-slate-900">{user.name}</td>
                     <td className="p-4 text-slate-600 text-sm">{user.email}</td>
                     <td className="p-4">
-                      <select defaultValue={user.role} className="text-xs border border-slate-200 rounded px-2 py-1">
-                        <option value="user">User</option>
-                        <option value="advertiser">Advertiser</option>
-                        <option value="admin">Admin</option>
-                      </select>
+                      <span className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700">{user.role}</span>
                     </td>
                     <td className="p-4">
                       <span className={`text-xs px-2 py-1 rounded-full ${
@@ -143,8 +173,14 @@ export default function AdminPage() {
                     </td>
                     <td className="p-4">
                       <div className="flex gap-1">
-                        <button className="p-1.5 hover:bg-blue-50 rounded text-blue-600"><Eye size={14} /></button>
-                        <button className="p-1.5 hover:bg-red-50 rounded text-red-600"><Ban size={14} /></button>
+                        <button
+                          onClick={() => handleBan(user.id, user.status === 'banned')}
+                          disabled={banning === user.id}
+                          title={user.status === 'banned' ? (language === 'ru' ? 'Разблокировать' : 'Unban') : (language === 'ru' ? 'Заблокировать' : 'Ban')}
+                          className={`p-1.5 rounded ${user.status === 'banned' ? 'hover:bg-green-50 text-green-600' : 'hover:bg-red-50 text-red-600'}`}
+                        >
+                          {user.status === 'banned' ? <UserCheck size={14} /> : <Ban size={14} />}
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -152,6 +188,7 @@ export default function AdminPage() {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 
@@ -162,6 +199,11 @@ export default function AdminPage() {
             <h3 className="font-bold text-slate-900">{t.contentModerationAdmin}</h3>
             <p className="text-sm text-slate-500">{language === 'ru' ? 'Автоматическая проверка + ручная модерация' : 'Automatic check + manual moderation'}</p>
           </div>
+          {displayContent.length === 0 ? (
+            <div className="p-10 text-center text-slate-500">
+              {language === 'ru' ? 'Нет контента на модерации' : 'No content to moderate'}
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-slate-50">
@@ -174,7 +216,7 @@ export default function AdminPage() {
                 </tr>
               </thead>
               <tbody>
-                {mockContent.map(item => (
+                {displayContent.map(item => (
                   <tr key={item.id} className="border-t border-slate-50 hover:bg-slate-50">
                     <td className="p-4 font-medium text-slate-900">{item.title}</td>
                     <td className="p-4 text-slate-600 text-sm">{item.author}</td>
@@ -192,8 +234,20 @@ export default function AdminPage() {
                     <td className="p-4 text-slate-600 text-sm">{item.date}</td>
                     <td className="p-4">
                       <div className="flex gap-1">
-                        <button className="p-1.5 hover:bg-green-50 rounded text-green-600"><Check size={14} /></button>
-                        <button className="p-1.5 hover:bg-red-50 rounded text-red-600"><Ban size={14} /></button>
+                        <button
+                          onClick={() => moderatePost(item.id, 'approve', 'Одобрено администратором')}
+                          className="p-1.5 hover:bg-green-50 rounded text-green-600"
+                          title={language === 'ru' ? 'Одобрить' : 'Approve'}
+                        >
+                          <Check size={14} />
+                        </button>
+                        <button
+                          onClick={() => moderatePost(item.id, 'reject', 'Отклонено администратором')}
+                          className="p-1.5 hover:bg-red-50 rounded text-red-600"
+                          title={language === 'ru' ? 'Отклонить' : 'Reject'}
+                        >
+                          <Ban size={14} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -201,6 +255,7 @@ export default function AdminPage() {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 

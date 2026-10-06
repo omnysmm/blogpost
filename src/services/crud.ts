@@ -22,14 +22,14 @@ export async function fetchById<T>(table: string, id: string): Promise<T | null>
 
 export async function insert<T>(table: string, row: Partial<T>): Promise<T | null> {
   if (!isSupabaseConfigured) return null;
-  const { data, error } = await supabase.from(table).insert(row).select().single();
+  const { data, error } = await supabase.from(table).insert(row as any).select().single();
   if (error) { console.error(`Insert ${table} error:`, error); return null; }
   return data as T;
 }
 
 export async function updateById<T>(table: string, id: string, updates: Partial<T>): Promise<T | null> {
   if (!isSupabaseConfigured) return null;
-  const { data, error } = await supabase.from(table).update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+  const { data, error } = await supabase.from(table).update({ ...updates, updated_at: new Date().toISOString() } as any).eq('id', id).select().single();
   if (error) { console.error(`Update ${table} error:`, error); return null; }
   return data as T;
 }

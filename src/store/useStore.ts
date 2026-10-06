@@ -1,5 +1,12 @@
 import { create } from 'zustand';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import {
+  signInWithEmail,
+  signUpWithEmail,
+  signOut as authSignOut,
+  getSessionUser,
+  onAuthStateChange,
+} from '../services/auth';
 import { generateText, generateImage, generateAudio, checkGenerationLimit } from '../services/ai';
 import { fetchPosts, createPost, updatePost as crudUpdatePost, deletePost as crudDeletePost, fetchAnalytics as crudFetchAnalytics, insertAnalytics, fetchPlatformStats, fetchAllUsers, validatePromoCode, exportToCSV } from '../services/crud';
 import {
@@ -76,18 +83,19 @@ const defaultAdBlocks: AdBlock[] = [
   { id: '4', title: 'Нижний баннер', position: 'footer', type: 'banner', pricePerDay: 10000, link: '#', active: false, impressions: 5600, clicks: 78 },
 ];
 
-// ═══ Auth helpers (localStorage fallback) ═══
-function getLocalUsers(): any[] {
-  try { return JSON.parse(localStorage.getItem('blogpro_users') || '[]'); } catch { return []; }
-}
-function saveLocalUsers(users: any[]) {
-  localStorage.setItem('blogpro_users', JSON.stringify(users));
-}
+// ═══ Read hash for legal pages / deep links ═══
+const KNOWN_PAGES = new Set([
+  'home', 'dashboard', 'content-generator', 'analytics', 'social-publish',
+  'subscriptions', 'advertising', 'advertiser', 'advertiser-cabinet',
+  'support', 'admin', 'profile', 'settings', 'auth',
+]);
 
-// ═══ Read hash for legal pages ═══
 function getInitialPage(): string {
-  const hash = window.location.hash.replace('#/', '');
+  // Hash may contain query params after OAuth redirect: #/auth?token=...&email=...
+  const rawHash = window.location.hash.replace(/^#\/?/, '');
+  const hash = rawHash.split('?')[0];
   if (hash.startsWith('legal/')) return hash;
+  if (hash && KNOWN_PAGES.has(hash)) return hash;
   const saved = localStorage.getItem('blogpost_page');
   if (saved) return saved;
   return 'home';
@@ -232,40 +240,53 @@ export const useStore = create<AppState>((set, get) => ({
   addAdBlock: (block) => set({ adBlocks: [...get().adBlocks, block] }),
   updateAdBlock: (id, updates) => set({ adBlocks: get().adBlocks.map(b => b.id === id ? { ...b, ...updates } : b) }),
 
-  // ═══ Restore session after page refresh ═══
+  // ═══ Restore session after page refresh (Supabase session is source of truth) ═══
   restoreSession: () => {
-    const saved = loadSessionUser<User>();
-    if (saved && saved.id) {
-      set({ currentUser: saved, currentPage: getInitialPage() === 'home' ? 'dashboard' : getInitialPage() });
-    }
+    // Subscribe to Supabase auth changes (sign-in from another tab, OAuth return, etc.)
+    onAuthStateChange(async (user) => {
+      if (user) {
+        saveSessionUser(user);
+        set({
+          currentUser: user,
+          currentPage: getInitialPage() === 'home' ? 'dashboard' : getInitialPage(),
+        });
+        if (get().dataLoadedFor !== user.id) {
+          await get().loadUserData();
+        }
+      } else {
+        clearSessionUser();
+        set({ currentUser: null, posts: [], analytics: [], dataLoadedFor: null });
+      }
+    });
+
+    // Hydrate immediately from existing session
+    void (async () => {
+      const user = await getSessionUser();
+      if (user) {
+        saveSessionUser(user);
+        set({
+          currentUser: user,
+          currentPage: getInitialPage() === 'home' ? 'dashboard' : getInitialPage(),
+        });
+        await get().loadUserData();
+        return;
+      }
+      // Offline / unconfigured fallback: cached session for dev
+      const saved = loadSessionUser<User>();
+      if (saved && saved.id && !isSupabaseConfigured) {
+        set({ currentUser: saved, currentPage: getInitialPage() === 'home' ? 'dashboard' : getInitialPage() });
+      }
+    })();
   },
 
   // ═══ Login ═══
   login: async (email, password) => {
-    // Supabase auth
-    if (isSupabaseConfigured) {
-      try {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (!error && data.user) {
-          const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single();
-          if (profile) {
-            set({ currentUser: profile as User, currentPage: 'dashboard' });
-            saveSessionUser(profile);
-            await get().loadUserData();
-            return true;
-          }
-        }
-      } catch (e) {
-        console.error('Supabase login error:', e);
-      }
-    }
-
-    // Fallback: admin shortcut
-    if (email === 'admin' && password === 'admin') {
+    // Dev shortcut when Supabase is not configured
+    if (!isSupabaseConfigured && email === 'admin@admin.ru' && password === 'admin') {
       const admin: User = {
         id: 'admin-1',
         name: 'Администратор',
-        email: 'admin@blogpost.ru',
+        email: 'admin@admin.ru',
         role: 'admin',
         subscription: 'premium',
         registeredAt: new Date().toISOString(),
@@ -276,70 +297,36 @@ export const useStore = create<AppState>((set, get) => ({
       return true;
     }
 
-    // Fallback: localStorage
-    const users = getLocalUsers();
-    const user = users.find((u: any) => u.email === email);
-    if (user && user.password === password) {
-      const { password: _, ...userWithoutPassword } = user;
-      set({ currentUser: userWithoutPassword, currentPage: 'dashboard' });
-      saveSessionUser(userWithoutPassword);
+    const result = await signInWithEmail(email, password);
+    if (result.ok && result.user) {
+      set({ currentUser: result.user, currentPage: 'dashboard' });
+      saveSessionUser(result.user);
       await get().loadUserData();
       return true;
+    }
+    if (result.error === 'supabase_not_configured') {
+      console.warn('login: Supabase is not configured');
     }
     return false;
   },
 
   // ═══ Register ═══
   register: async (name, email, password) => {
-    if (isSupabaseConfigured) {
-      try {
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { data: { name } },
-        });
-        if (error || !data.user) return false;
-
-        const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single();
-        if (profile) {
-          set({ currentUser: profile as User, currentPage: 'dashboard' });
-          saveSessionUser(profile);
-          await get().loadUserData();
-          return true;
-        }
-      } catch (e) {
-        console.error('Supabase register error:', e);
-      }
+    const result = await signUpWithEmail(name, email, password);
+    if (result.ok && result.user) {
+      set({ currentUser: result.user, currentPage: 'dashboard' });
+      saveSessionUser(result.user);
+      await get().loadUserData();
+      return true;
     }
-
-    // Fallback: localStorage
-    const users = getLocalUsers();
-    if (users.find((u: any) => u.email === email)) return false;
-
-    const newUser = {
-      id: Date.now().toString(),
-      name,
-      email,
-      password,
-      role: 'user' as UserRole,
-      subscription: 'free' as Subscription,
-      registeredAt: new Date().toISOString(),
-      freeTrialEnd: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
-    };
-    users.push(newUser);
-    saveLocalUsers(users);
-    const { password: _, ...userWithoutPassword } = newUser;
-    set({ currentUser: userWithoutPassword, currentPage: 'dashboard' });
-    saveSessionUser(userWithoutPassword);
-    await get().loadUserData();
-    return true;
+    // Email confirmation pending — treat as success UI-wise (page shows message)
+    if (result.needsEmailConfirm) return true;
+    return false;
   },
 
   // ═══ Logout — keeps saved posts/analytics ═══
   logout: async () => {
-    if (isSupabaseConfigured) {
-      await supabase.auth.signOut();
-    }
+    await authSignOut();
     localStorage.removeItem('blogpost_page');
     clearSessionUser();
     // Keep posts/analytics in localStorage so they survive re-login

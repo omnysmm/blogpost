@@ -59,7 +59,7 @@ function extractLlmText(raw: string): string {
 
 // ═══ Text Generation ═══
 export async function generateText(options: GenerateTextOptions): Promise<string> {
-  const { prompt, maxLength = 2000, language = 'ru', system, raw } = options;
+  const { prompt, model = 'auto', maxLength = 2000, language = 'ru', system, raw } = options;
 
   const systemPrompt = system || (language === 'ru'
     ? `Ты — маркетолог и редактор. Пиши связный текст СТРОГО по теме запроса.
@@ -79,12 +79,29 @@ Max ${maxLength} chars. Ready material only.`);
     return raw ? t : ensureSeoEngagement(t, language);
   };
 
-  // 1) Local Vite middleware (server-side LLM) — most reliable
+  // 1) Supabase Edge Function (YandexGPT / GigaChat) — primary path
+  try {
+    const response = await callEdgeFunction('ai-generate-text', {
+      prompt,
+      systemPrompt,
+      model,
+      language,
+      maxLength,
+    });
+    const text = String(response?.text || '').trim();
+    const ok = accept(text);
+    if (ok) return ok;
+    console.warn('ai-generate-text weak/empty result', response?.warning || response?.model);
+  } catch (e) {
+    console.warn('ai-generate-text edge function failed:', e);
+  }
+
+  // 2) Local Vite middleware (server-side LLM) — dev / offline proxy
   try {
     const res = await fetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, system: systemPrompt, language }),
+      body: JSON.stringify({ prompt, system: systemPrompt, language, model }),
     });
     const data = await res.json();
     const text = String(data?.text || '').trim();
@@ -95,7 +112,7 @@ Max ${maxLength} chars. Ready material only.`);
     console.warn('Vite /api/generate failed:', e);
   }
 
-  // 2) Direct / proxied OpenAI-compatible endpoints
+  // 3) Direct / proxied OpenAI-compatible endpoints (fallback)
   const tries: Array<{ url: string; model: string }> = [
     { url: '/api/llm/openai', model: 'openai' },
     { url: '/api/llm/openai', model: 'openai-fast' },
@@ -187,6 +204,54 @@ async function postOpenAI(endpoint: string, body: Record<string, unknown>): Prom
   }
 }
 
+/** Stream text deltas from Edge Function (YandexGPT/GigaChat). Falls back to one-shot generateText. */
+export async function generateTextStream(
+  options: GenerateTextOptions,
+  onDelta: (chunk: string, full: string) => void
+): Promise<string> {
+  const { prompt, model = 'auto', maxLength = 2000, language = 'ru', system, raw } = options;
+  const systemPrompt = system || (language === 'ru'
+    ? `Ты — маркетолог и редактор. Пиши связный текст СТРОГО по теме запроса. Максимум ${maxLength} символов.`
+    : `You are a marketer and editor. Write on topic. Max ${maxLength} chars.`);
+
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  if (supabaseUrl) {
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/ai-generate-text`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ prompt, systemPrompt, model, language, maxLength, stream: true }),
+      });
+      if (res.ok) {
+        // Edge returns full JSON; stream progressive UI via chunked read if body is large
+        const data = await res.json();
+        const text = String(data?.text || '');
+        if (text.length > 20) {
+          // Simulate progressive delivery for UX (models return complete text)
+          const step = Math.max(20, Math.floor(text.length / 12));
+          let full = '';
+          for (let i = 0; i < text.length; i += step) {
+            const chunk = text.slice(i, i + step);
+            full += chunk;
+            onDelta(chunk, full);
+            await new Promise((r) => setTimeout(r, 30));
+          }
+          return raw ? text : ensureSeoEngagement(text, language);
+        }
+      }
+    } catch (e) {
+      console.warn('generateTextStream edge failed, falling back:', e);
+    }
+  }
+
+  const text = await generateText(options);
+  onDelta(text, text);
+  return text;
+}
+
 // ═══ Image Generation ═══
 export async function generateImage(options: GenerateImageOptions): Promise<string> {
   const { prompt, width = 1024, height = 640, style = 'realistic' } = options;
@@ -197,6 +262,21 @@ export async function generateImage(options: GenerateImageOptions): Promise<stri
   const fullPrompt = `${cleanPrompt}, ${style}, high quality`;
   const seed = Math.floor(Math.random() * 1_000_000);
 
+  // 1) Edge Function (Kandinsky / FusionBrain) — keys stay server-side
+  try {
+    const response = await callEdgeFunction('ai-generate-image', {
+      prompt: fullPrompt,
+      width,
+      height,
+    });
+    const url = response?.imageUrl || response?.base64 || '';
+    if (url && url.length > 400) return url;
+    if (response?.warning) console.warn('ai-generate-image warning:', response.warning);
+  } catch (e) {
+    console.warn('ai-generate-image edge function failed:', e);
+  }
+
+  // 2) Public fallbacks
   const candidates = [
     `/api/image?prompt=${encodeURIComponent(fullPrompt)}`,
     `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=${width}&height=${height}&nologo=true&seed=${seed}`,
@@ -231,6 +311,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<stri
 export async function generateAudio(options: GenerateAudioOptions): Promise<string> {
   const { text, voice = 'female', speed = 1.0 } = options;
 
+  // 1) Edge Function (Silero TTS)
   try {
     const response = await callEdgeFunction('ai-generate-audio', {
       text,
@@ -238,11 +319,36 @@ export async function generateAudio(options: GenerateAudioOptions): Promise<stri
       speed,
       model: 'silero',
     });
-    return response.audioUrl || response.base64 || '';
+    const url = response.audioUrl || response.base64 || '';
+    if (url) return url;
   } catch (error) {
-    console.error('AI audio generation failed:', error);
-    throw new Error('Ошибка генерации аудио. Попробуйте позже.');
+    console.warn('AI audio generation failed:', error);
   }
+
+  // 2) Browser SpeechSynthesis — playable preview (not a file)
+  return new Promise<string>((resolve) => {
+    try {
+      if (typeof window === 'undefined' || !window.speechSynthesis) {
+        resolve('');
+        return;
+      }
+      const utter = new SpeechSynthesisUtterance(text.slice(0, 500));
+      utter.rate = speed;
+      utter.lang = 'ru-RU';
+      const voices = window.speechSynthesis.getVoices();
+      const match = voices.find((v) =>
+        voice === 'male' ? /male|daniel|dmitry/i.test(v.name) : /female|milena|alena|google ru/i.test(v.name)
+      );
+      if (match) utter.voice = match;
+      // Return a marker the UI can use to play live TTS
+      const marker = `speech:${encodeURIComponent(text.slice(0, 500))}`;
+      utter.onend = () => {};
+      window.speechSynthesis.speak(utter);
+      resolve(marker);
+    } catch {
+      resolve('');
+    }
+  });
 }
 
 // ═══ Video Generation ═══
@@ -293,12 +399,13 @@ export async function optimizeSEO(content: string, keywords: string[]): Promise<
 }
 
 // ═══ Auto Model Selection ═══
-function selectBestModel(task: string, language: string): string {
-  // Russian content → YandexGPT (better Russian understanding)
-  // English content → GigaChat (good multilingual)
-  // Complex creative → YandexGPT Pro
-  if (language === 'ru') return 'yandexgpt';
+export function autoSelectModel(task: string, language: string = 'ru'): AIModel {
+  if (language === 'ru' || /[а-яё]/i.test(task)) return 'yandexgpt';
   return 'gigachat';
+}
+
+function selectBestModel(task: string, language: string): string {
+  return autoSelectModel(task, language);
 }
 
 // ═══ Edge Function Caller ═══
@@ -306,7 +413,6 @@ async function callEdgeFunction(functionName: string, payload: Record<string, un
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
   if (!supabaseUrl) {
-    // Fallback: mock responses for development (marked so generateText can try live AI)
     return { ...mockResponse(functionName, payload), __mock: true };
   }
 
@@ -321,17 +427,14 @@ async function callEdgeFunction(functionName: string, payload: Record<string, un
     });
 
     if (!response.ok) {
-      console.warn(`Edge function ${functionName} returned ${response.status}, using mock`);
+      console.warn(`Edge function ${functionName} returned ${response.status}`);
       return { ...mockResponse(functionName, payload), __mock: true };
     }
 
     const data = await response.json();
-    if (data && (data.text || data.imageUrl || data.audioUrl || data.videoUrl || data.musicUrl)) {
-      return data;
-    }
-    return { ...mockResponse(functionName, payload), __mock: true };
+    return data ?? mockResponse(functionName, payload);
   } catch (err) {
-    console.warn(`Edge function ${functionName} unreachable, using mock:`, err);
+    console.warn(`Edge function ${functionName} unreachable:`, err);
     return { ...mockResponse(functionName, payload), __mock: true };
   }
 }
@@ -369,18 +472,62 @@ function mockResponse(functionName: string, payload: Record<string, unknown>): a
 }
 
 // ═══ Usage Limits Check ═══
-export async function checkGenerationLimit(userId: string, subscription: string): Promise<{ allowed: boolean; remaining: number }> {
-  const limits: Record<string, number> = {
-    free: 10,
-    basic: 10,
-    pro: 60,
-    premium: Infinity,
-  };
+const PLAN_LIMITS: Record<string, number> = {
+  free: 10,
+  basic: 50,
+  pro: 300,
+  premium: Infinity,
+};
 
-  const limit = limits[subscription] ?? 0;
+export async function checkGenerationLimit(
+  userId: string,
+  subscription: string
+): Promise<{ allowed: boolean; remaining: number; used: number; limit: number }> {
+  const limit = PLAN_LIMITS[subscription] ?? 10;
+  if (limit === Infinity) {
+    return { allowed: true, remaining: Infinity, used: 0, limit: Infinity };
+  }
 
-  // In production: query Supabase for actual usage count this month
-  // const { count } = await supabase.from('posts').select('id', { count: 'exact' }).eq('user_id', userId).gte('created_at', startOfMonth);
+  let used = 0;
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
 
-  return { allowed: true, remaining: limit };
+  if (supabaseUrl) {
+    try {
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/posts?user_id=eq.${userId}&created_at=gte.${startOfMonth.toISOString()}&select=id`,
+        {
+          headers: {
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            Prefer: 'count=exact',
+          },
+        }
+      );
+      const contentRange = res.headers.get('content-range') || '';
+      const match = contentRange.match(/\/(\d+)\s*$/);
+      if (match) used = parseInt(match[1], 10) || 0;
+    } catch {
+      // ignore — fall through to localStorage estimate
+    }
+  }
+
+  if (used === 0) {
+    try {
+      const raw = localStorage.getItem(`blogpost_posts_${userId}`);
+      if (raw) {
+        const posts = JSON.parse(raw);
+        if (Array.isArray(posts)) {
+          used = posts.filter(
+            (p: any) => new Date(p.createdAt || 0) >= startOfMonth
+          ).length;
+        }
+      }
+    } catch {}
+  }
+
+  const remaining = Math.max(0, limit - used);
+  return { allowed: remaining > 0, remaining, used, limit };
 }

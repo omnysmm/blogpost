@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
 import {
@@ -7,6 +7,15 @@ import {
   Zap, MessageSquare, ChevronRight, Plus, Trash2, ToggleLeft, ToggleRight,
   Lightbulb, TrendingUp, Shield, Paperclip
 } from 'lucide-react';
+import {
+  loadSupportTickets,
+  createSupportTicket,
+  sendTicketMessage,
+  ensureChatTicket,
+  subscribeTickets,
+  subscribeChatThread,
+  type SupportTicket,
+} from '../services/support';
 
 interface Message {
   id: string;
@@ -61,13 +70,14 @@ export default function SupportPage() {
   const [chatAttachments, setChatAttachments] = useState<string[]>([]);
 
   // ===== TICKETS STATE =====
-  const [tickets, setTickets] = useState<Ticket[]>([
-    { id: '1', subject: language === 'ru' ? 'Не работает публикация в VK' : 'VK publishing not working', status: 'in-progress', priority: 'high', createdAt: '2024-03-15', lastReply: '2024-03-16' },
-    { id: '2', subject: language === 'ru' ? 'Вопрос по тарифу Pro' : 'Question about Pro plan', status: 'resolved', priority: 'medium', createdAt: '2024-03-10', lastReply: '2024-03-11' },
-    { id: '3', subject: language === 'ru' ? 'Как настроить расписание' : 'How to set up schedule', status: 'closed', priority: 'low', createdAt: '2024-03-05' },
-  ]);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
   const [showNewTicket, setShowNewTicket] = useState(false);
   const [newTicket, setNewTicket] = useState({ subject: '', message: '', priority: 'medium' as 'low' | 'medium' | 'high' });
+
+  // Realtime + persistence refs (avoid stale closures in subscriptions)
+  const chatTicketIdRef = useRef<string | null>(null);
+  const [chatTicketId, setChatTicketId] = useState<string | null>(null);
+  const seenMsgIds = useRef(new Set<string>());
 
   // ===== REPORTS STATE =====
   const [reports, setReports] = useState<ReportConfig[]>([
@@ -107,6 +117,101 @@ export default function SupportPage() {
     includeBilling: false,
   });
 
+  // ===== LOAD TICKETS + REALTIME =====
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    let cancelled = false;
+    const seen = seenMsgIds.current;
+
+    (async () => {
+      const remote = await loadSupportTickets(currentUser.id);
+      if (cancelled) return;
+      setTickets(
+        remote.map((t) => ({
+          id: t.id,
+          subject: t.subject,
+          status: t.status,
+          priority: t.priority,
+          createdAt: t.createdAt.split('T')[0],
+          lastReply: t.lastReply?.split('T')[0],
+        }))
+      );
+
+      // Rolling AI-chat ticket for message persistence
+      const chatId = await ensureChatTicket(currentUser.id);
+      if (cancelled) return;
+      chatTicketIdRef.current = chatId;
+      setChatTicketId(chatId);
+
+      // Load prior chat history (if any) and merge above the welcome message
+      const { loadTicketMessages } = await import('../services/support');
+      const history = await loadTicketMessages(chatId);
+      if (cancelled || history.length === 0) return;
+      setMessages((prev) => {
+        const byId = new Map(prev.map((m) => [m.id, m]));
+        for (const h of history) {
+          seen.add(h.id);
+          byId.set(h.id, {
+            id: h.id,
+            role: h.sender === 'user' ? 'user' : h.sender === 'operator' ? 'system' : 'ai',
+            content: h.content,
+            timestamp: new Date(h.createdAt),
+          });
+        }
+        return [...byId.values()].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+      });
+    })();
+
+    const unsubs: Array<() => void> = [];
+
+    unsubs.push(
+      subscribeTickets(currentUser.id, (ticket, event) => {
+        if (ticket.subject === '__ai_chat__') return;
+        setTickets((prev) => {
+          const mapped: Ticket = {
+            id: ticket.id,
+            subject: ticket.subject,
+            status: ticket.status,
+            priority: ticket.priority,
+            createdAt: ticket.createdAt.split('T')[0],
+            lastReply: ticket.lastReply?.split('T')[0],
+          };
+          if (event === 'INSERT') {
+            return [mapped, ...prev.filter((t) => t.id !== mapped.id)];
+          }
+          return prev.map((t) => (t.id === mapped.id ? { ...t, ...mapped } : t));
+        });
+      })
+    );
+
+    return () => {
+      cancelled = true;
+      unsubs.forEach((u) => u());
+    };
+  }, [currentUser?.id]);
+
+  // Realtime chat thread (AI + operator replies)
+  useEffect(() => {
+    if (!chatTicketId) return;
+
+    return subscribeChatThread(chatTicketId, (msg) => {
+      if (seenMsgIds.current.has(msg.id)) return;
+      seenMsgIds.current.add(msg.id);
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === msg.id)) return prev;
+        return [
+          ...prev,
+          {
+            id: msg.id,
+            role: msg.sender === 'user' ? 'user' : msg.sender === 'operator' ? 'system' : 'ai',
+            content: msg.content,
+            timestamp: new Date(msg.createdAt),
+          },
+        ];
+      });
+    });
+  }, [chatTicketId]);
+
   // ===== AI RESPONSES =====
   const aiResponses: Record<string, string> = {
     'генерация': language === 'ru' ? '🎨 Для генерации контента перейдите в раздел "Генерация контента".\n\n📝 Шаги:\n1. Выберите тип (пост, статья, видео, музыка)\n2. Введите тему\n3. Выберите AI-модель (или автоматический режим)\n4. Нажмите "Сгенерировать"\n\n✨ Доступные бесплатные модели: YandexGPT, GigaChat, Kandinsky, Silero TTS, RuTTS-GAN и другие.\n\n💡 Совет: включите SEO и GEO для лучшей видимости в соцсетях!' : '🎨 To generate content, go to the "Content Generator" section.\n\n📝 Steps:\n1. Choose type (post, article, video, music)\n2. Enter topic\n3. Select AI model (or auto mode)\n4. Click "Generate"\n\n✨ Free models: YandexGPT, GigaChat, Kandinsky, Silero TTS, RuTTS-GAN and more.\n\n💡 Tip: enable SEO and GEO for better visibility!',
@@ -122,26 +227,44 @@ export default function SupportPage() {
     ? ['Генерация контента', 'Публикация', 'Тарифы', 'Реклама', 'Отчёты', 'Ошибки', 'API']
     : ['Content generation', 'Publishing', 'Plans', 'Advertising', 'Reports', 'Errors', 'API'];
 
-  const handleSend = () => {
-    if (!input.trim()) return;
+  const handleSend = (overrideText?: string) => {
+    const text = (overrideText ?? input).trim();
+    if (!text) return;
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input,
+      content: text,
       timestamp: new Date(),
       attachments: chatAttachments.length > 0 ? chatAttachments : undefined,
     };
+    seenMsgIds.current.add(userMsg.id);
     setMessages(prev => [...prev, userMsg]);
-    setInput('');
+    const sentText = text;
+    if (overrideText !== undefined) setInput('');
+    else setInput('');
     setChatAttachments([]);
     setIsTyping(true);
+
+    // Persist to Supabase (Realtime will echo — id deduped via seenMsgIds)
+    const chatId = chatTicketIdRef.current;
+    if (chatId) {
+      void sendTicketMessage(chatId, 'user', sentText).then((saved) => {
+        if (saved) {
+          seenMsgIds.current.add(saved.id);
+          // Replace temp id with server id if different
+          setMessages((prev) =>
+            prev.map((m) => (m.id === userMsg.id ? { ...m, id: saved.id } : m))
+          );
+        }
+      });
+    }
 
     setTimeout(() => {
       let response = language === 'ru'
         ? '✅ Спасибо за ваш вопрос! Я обработал информацию.\n\n🤖 Я AI-ассистент, работающий на современных нейросетях. Если мой ответ не помог, вы можете:\n\n📋 Создать тикет — раздел "Обращения"\n📧 Настроить отчёты — раздел "Отчёты"\n👨‍💻 Связаться с оператором — напишите "оператор"\n\n💡 Чем ещё могу помочь?'
         : '✅ Thanks for your question! I\'ve processed the information.\n\n🤖 I\'m an AI assistant working on modern neural networks. If my answer didn\'t help, you can:\n\n📋 Create a ticket — "Tickets" section\n📧 Set up reports — "Reports" section\n👨‍💻 Contact operator — type "operator"\n\n💡 How else can I help?';
 
-      const lowerInput = input.toLowerCase();
+      const lowerInput = sentText.toLowerCase();
       for (const [key, value] of Object.entries(aiResponses)) {
         if (lowerInput.includes(key)) {
           response = value;
@@ -156,50 +279,63 @@ export default function SupportPage() {
       }
 
       const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'ai', content: response, timestamp: new Date() };
+      seenMsgIds.current.add(aiMsg.id);
       setMessages(prev => [...prev, aiMsg]);
       setIsTyping(false);
+      if (chatId) {
+        void sendTicketMessage(chatId, 'ai', response).then((saved) => {
+          if (saved) {
+            seenMsgIds.current.add(saved.id);
+            setMessages((prev) =>
+              prev.map((m) => (m.id === aiMsg.id ? { ...m, id: saved.id } : m))
+            );
+          }
+        });
+      }
     }, 1500);
   };
 
   const handleQuickTopic = (topic: string) => {
-    setInput(topic);
-    setTimeout(() => {
-      const userMsg: Message = { id: Date.now().toString(), role: 'user', content: topic, timestamp: new Date() };
-      setMessages(prev => [...prev, userMsg]);
-      setInput('');
-      setIsTyping(true);
-      setTimeout(() => {
-        let response = '';
-        const lowerTopic = topic.toLowerCase();
-        for (const [key, value] of Object.entries(aiResponses)) {
-          if (lowerTopic.includes(key)) { response = value; break; }
-        }
-        if (!response) response = language === 'ru' ? 'Обрабатываю ваш запрос...' : 'Processing your request...';
-        setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'ai', content: response, timestamp: new Date() }]);
-        setIsTyping(false);
-      }, 1200);
-    }, 100);
+    handleSend(topic);
   };
 
-  const handleCreateTicket = () => {
+  const handleCreateTicket = async () => {
     if (!newTicket.subject || !newTicket.message) return;
-    const ticket: Ticket = {
-      id: Date.now().toString(),
-      subject: newTicket.subject,
-      status: 'open',
-      priority: newTicket.priority,
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-    setTickets(prev => [ticket, ...prev]);
+    if (!currentUser?.id) return;
+    const subject = newTicket.subject;
+    const message = newTicket.message;
+    const created = await createSupportTicket(currentUser.id, subject, newTicket.priority, message);
+    if (created) {
+      setTickets((prev) => [
+        {
+          id: created.id,
+          subject: created.subject,
+          status: created.status,
+          priority: created.priority,
+          createdAt: created.createdAt.split('T')[0],
+          lastReply: created.lastReply?.split('T')[0],
+        },
+        ...prev.filter((t) => t.id !== created.id),
+      ]);
+    }
     setShowNewTicket(false);
     setNewTicket({ subject: '', message: '', priority: 'medium' });
     // Auto AI response
+    const sysId = Date.now().toString();
+    seenMsgIds.current.add(sysId);
     setMessages(prev => [...prev, {
-      id: Date.now().toString(),
+      id: sysId,
       role: 'system',
-      content: language === 'ru' ? `📋 Создан тикет #${ticket.id}: "${newTicket.subject}". AI-ассистент уже анализирует ваш вопрос.` : `📋 Ticket #${ticket.id} created: "${newTicket.subject}". AI assistant is already analyzing your question.`,
+      content: language === 'ru' ? `📋 Создан тикет #${created?.id || ''}: "${subject}". AI-ассистент уже анализирует ваш вопрос.` : `📋 Ticket #${created?.id || ''} created: "${subject}". AI assistant is already analyzing your question.`,
       timestamp: new Date(),
     }]);
+    if (chatTicketIdRef.current) {
+      void sendTicketMessage(chatTicketIdRef.current, 'ai',
+        language === 'ru'
+          ? `📋 Создан тикет #${created?.id || ''}: "${subject}". AI-ассистент уже анализирует ваш вопрос.`
+          : `📋 Ticket #${created?.id || ''} created: "${subject}". AI assistant is already analyzing your question.`
+      );
+    }
   };
 
   const handleCreateReport = () => {
@@ -429,7 +565,7 @@ export default function SupportPage() {
                     placeholder={language === 'ru' ? 'Введите ваш вопрос...' : 'Type your question...'}
                     className="flex-1 p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none text-sm"
                   />
-                  <button onClick={handleSend} disabled={!input.trim()} className="px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl hover:shadow-lg transition disabled:opacity-50">
+                  <button onClick={() => handleSend()} disabled={!input.trim()} className="px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl hover:shadow-lg transition disabled:opacity-50">
                     <Send size={18} />
                   </button>
                 </div>

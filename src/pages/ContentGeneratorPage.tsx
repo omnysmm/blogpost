@@ -140,6 +140,8 @@ export default function ContentGeneratorPage() {
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
   const [genStatusTopic, setGenStatusTopic] = useState<string | null>(null);
   const [genStatusPrompt, setGenStatusPrompt] = useState<string | null>(null);
+  const [genProgressTopic, setGenProgressTopic] = useState(0);
+  const [genProgressPrompt, setGenProgressPrompt] = useState(0);
   /** Form “Опубликовать сейчас” only — independent of queue. */
   const [isFormPublishing, setIsFormPublishing] = useState(false);
   /** Which queue post is publishing right now (null = none). */
@@ -316,6 +318,8 @@ export default function ContentGeneratorPage() {
       isTopicSource ? setIsGeneratingTopic(v) : setIsGeneratingPrompt(v);
     const setStatus = (v: string | null) =>
       isTopicSource ? setGenStatusTopic(v) : setGenStatusPrompt(v);
+    const setProgress = (v: number) =>
+      isTopicSource ? setGenProgressTopic(v) : setGenProgressPrompt(v);
 
     if (currentUser) {
       const { allowed } = await checkGenerationLimit(currentUser.id, currentUser.subscription);
@@ -330,6 +334,7 @@ export default function ContentGeneratorPage() {
     const topicField = isTopicSource ? topic.trim() : userPrompt.trim().slice(0, 80);
 
     setBusy(true);
+    setProgress(15);
     setStatus(
       isTopicSource
         ? (ru ? 'Генерируем текст по теме…' : 'Generating text for topic…')
@@ -354,6 +359,7 @@ export default function ContentGeneratorPage() {
         tone: 'creative',
         system,
         raw: !isTopicSource,
+        model: (selectedPremiumModel || selectedModel || 'auto') as 'yandexgpt' | 'gigachat' | 'auto',
       });
 
       // Bind secondary fields by type
@@ -364,6 +370,7 @@ export default function ContentGeneratorPage() {
 
       // Image for the active source (post / article always when enabled; video/editing optional)
       if (generateImageOpt && supportsImage) {
+        setProgress(55);
         setStatus(
           isTopicSource
             ? (ru ? `Генерируем изображение по теме «${label}»…` : `Generating image for «${label}»…`)
@@ -389,6 +396,7 @@ export default function ContentGeneratorPage() {
 
       // Voiceover audio for voiceover type (and optional for others)
       if (contentType === 'voiceover' || generateAudioOpt) {
+        setProgress(80);
         const speakText = contentType === 'voiceover' ? (voiceText || htmlToPlain(content)) : htmlToPlain(content).slice(0, 500);
         if (speakText) {
           setStatus(ru ? 'Озвучиваем текст…' : 'Generating voiceover…');
@@ -432,6 +440,7 @@ export default function ContentGeneratorPage() {
       const finalHtml = withImageHtml(textHtml, photo, imagePosition);
 
       setGeneratedHtml(finalHtml);
+      setProgress(100);
       setStatus(null);
       setBusy(false);
 
@@ -1265,9 +1274,17 @@ export default function ContentGeneratorPage() {
                 )}
               </div>
               {genStatusTopic && (
-                <p className="text-xs text-blue-600 mt-2 flex items-center gap-1">
-                  <Loader2 size={12} className="animate-spin" /> {genStatusTopic}
-                </p>
+                <div className="mt-2">
+                  <p className="text-xs text-blue-600 flex items-center gap-1">
+                    <Loader2 size={12} className="animate-spin" /> {genStatusTopic}
+                  </p>
+                  <div className="mt-1.5 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.max(5, genProgressTopic)}%` }}
+                    />
+                  </div>
+                </div>
               )}
             </div>
 
@@ -1322,9 +1339,17 @@ export default function ContentGeneratorPage() {
                 </button>
               </div>
               {genStatusPrompt && (
-                <p className="text-xs text-blue-600 mt-2 flex items-center gap-1">
-                  <Loader2 size={12} className="animate-spin" /> {genStatusPrompt}
-                </p>
+                <div className="mt-2">
+                  <p className="text-xs text-blue-600 flex items-center gap-1">
+                    <Loader2 size={12} className="animate-spin" /> {genStatusPrompt}
+                  </p>
+                  <div className="mt-1.5 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.max(5, genProgressPrompt)}%` }}
+                    />
+                  </div>
+                </div>
               )}
             </div>
 
