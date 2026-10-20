@@ -16,6 +16,7 @@ import {
   ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell,
   AreaChart, Area, Legend
 } from 'recharts';
+import BillingHistoryPanel from '../components/BillingHistoryPanel';
 
 type CabinetTab = 'campaigns' | 'create' | 'analytics' | 'targeting' | 'creatives' | 'billing' | 'settings' | 'api';
 
@@ -711,17 +712,24 @@ export default function AdvertiserCabinetPage() {
         </div>
       )}
 
+      {/* Billing history */}
+      {activeTab === 'billing' && (
+        <BillingHistoryPanel
+          language={language}
+          currency={currency}
+          userId={currentUser?.id}
+        />
+      )}
+
       {/* Other Tabs - Placeholder */}
-      {(activeTab === 'creatives' || activeTab === 'billing' || activeTab === 'api') && (
+      {(activeTab === 'creatives' || activeTab === 'api') && (
         <div className="bg-white rounded-xl border border-slate-100 p-12 text-center">
           <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
             {activeTab === 'creatives' && <Image size={32} className="text-orange-600" />}
-            {activeTab === 'billing' && <DollarSign size={32} className="text-orange-600" />}
             {activeTab === 'api' && <Cpu size={32} className="text-orange-600" />}
           </div>
           <h3 className="text-xl font-bold text-slate-900 mb-2">
             {activeTab === 'creatives' && (language === 'ru' ? 'Управление креативами' : 'Creatives management')}
-            {activeTab === 'billing' && (language === 'ru' ? 'Биллинг и оплата' : 'Billing and payment')}
             {activeTab === 'api' && 'API интеграция'}
           </h3>
           <p className="text-slate-500">{language === 'ru' ? 'Раздел в разработке' : 'Section under development'}</p>

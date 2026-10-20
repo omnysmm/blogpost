@@ -153,6 +153,7 @@ type AdEvent = {
   date: string;
   position: string;
   ts: number;
+  cost?: number;
 };
 
 function loadEvents(): AdEvent[] {
@@ -163,6 +164,10 @@ function loadEvents(): AdEvent[] {
   }
 }
 
+export function listAdEvents(): AdEvent[] {
+  return loadEvents();
+}
+
 function saveEvents(events: AdEvent[]): void {
   try {
     // cap history at 5000 local events
@@ -170,7 +175,7 @@ function saveEvents(events: AdEvent[]): void {
   } catch {}
 }
 
-function logEvent(campaignId: string, kind: 'impression' | 'click', position: string) {
+function logEvent(campaignId: string, kind: 'impression' | 'click', position: string, cost = 0) {
   const events = loadEvents();
   events.push({
     id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -179,6 +184,7 @@ function logEvent(campaignId: string, kind: 'impression' | 'click', position: st
     date: today(),
     position,
     ts: Date.now(),
+    cost,
   });
   saveEvents(events);
 }
@@ -323,7 +329,9 @@ export function billEvent(
 // ═══ Tracking ═══
 
 export function trackImpression(campaignId: string, position: string = 'unknown'): void {
-  logEvent(campaignId, 'impression', position);
+  const list0 = loadCampaignsLocal();
+  const model0 = (list0.find(c => c.id === campaignId)?.paymentModel || 'cpm') as AdPaymentModel;
+  logEvent(campaignId, 'impression', position, calculateEventCost(model0, 'impression'));
   const list = loadCampaignsLocal();
   const idx = list.findIndex(c => c.id === campaignId);
   if (idx < 0) return;
@@ -363,7 +371,9 @@ export function trackImpression(campaignId: string, position: string = 'unknown'
 }
 
 export function trackClick(campaignId: string, position: string = 'unknown'): void {
-  logEvent(campaignId, 'click', position);
+  const list0 = loadCampaignsLocal();
+  const model0 = (list0.find(c => c.id === campaignId)?.paymentModel || 'cpc') as AdPaymentModel;
+  logEvent(campaignId, 'click', position, calculateEventCost(model0, 'click'));
   const list = loadCampaignsLocal();
   const idx = list.findIndex(c => c.id === campaignId);
   if (idx < 0) return;

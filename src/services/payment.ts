@@ -65,6 +65,27 @@ export async function createPayment(userId: string, planId: string): Promise<{ c
   }
 }
 
+/** Persist payment into billing ledger once YooKassa creates it (pending until webhook). */
+export function logPaymentForBilling(
+  userId: string,
+  amount: number,
+  description: string,
+  paymentId?: string
+) {
+  import('./billingHistory')
+    .then(({ recordPayment }) => {
+      recordPayment({
+        id: paymentId || undefined,
+        amount,
+        description,
+        method: 'yookassa',
+        status: 'pending',
+        userId,
+      });
+    })
+    .catch(() => {});
+}
+
 // ═══ Create Block Payment ═══
 export async function createBlockPayment(userId: string, blockIds: string[]): Promise<{ confirmationUrl: string } | null> {
   const total = blockIds.reduce((sum, id) => sum + (BLOCKS[id]?.price || 0), 0);
