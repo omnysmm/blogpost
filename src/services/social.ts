@@ -1,5 +1,6 @@
 // Social Media Integration Service
-// Handles OAuth connections and publishing to social networks
+// Real publish goes through vk/telegram/youtube/tiktok/ok/rutube/instagram services.
+// This module is a thin dispatcher used by higher-level flows.
 
 export type SocialNetwork = 'vk' | 'telegram' | 'youtube' | 'instagram' | 'tiktok' | 'ok' | 'rutube';
 
@@ -12,6 +13,7 @@ interface SocialAccount {
 
 interface PublishOptions {
   content: string;
+  title?: string;
   imageUrl?: string;
   videoUrl?: string;
   scheduledAt?: Date;
@@ -46,133 +48,110 @@ export function initiateOAuth(network: SocialNetwork): void {
     return;
   }
 
-  // Redirect to Supabase Edge Function which handles OAuth flow
   const redirectUrl = `${supabaseUrl}/functions/v1/social-oauth?network=${network}&redirect=${encodeURIComponent(window.location.origin)}`;
   window.location.href = redirectUrl;
 }
 
 // ═══ Get Connected Accounts ═══
-export async function getConnectedAccounts(userId: string): Promise<SocialAccount[]> {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-
-  if (!supabaseUrl) {
-    // Return mock data for development
-    return [
-      { network: 'vk', accountName: 'Моя страница VK', connected: true, connectedAt: '2024-03-01' },
-      { network: 'telegram', accountName: '@mychannel', connected: true, connectedAt: '2024-03-05' },
-    ];
-  }
-
+export async function getConnectedAccounts(_userId: string): Promise<SocialAccount[]> {
   try {
-    const response = await fetch(`${supabaseUrl}/rest/v1/social_accounts?user_id=eq.${userId}&select=network,account_name,connected,connected_at`, {
-      headers: {
-        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || '',
-        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-      },
-    });
-    const data = await response.json();
-    return data.map((acc: any) => ({
-      network: acc.network,
-      accountName: acc.account_name,
-      connected: acc.connected,
-      connectedAt: acc.connected_at,
+    const raw = localStorage.getItem('blogpost_socials');
+    if (!raw) return [];
+    const list = JSON.parse(raw) as Array<{
+      network: string;
+      name?: string;
+      connected?: boolean;
+      connectedAt?: string;
+    }>;
+    return list.map(s => ({
+      network: s.network as SocialNetwork,
+      accountName: s.name || s.network,
+      connected: !!s.connected,
+      connectedAt: s.connectedAt,
     }));
   } catch {
     return [];
   }
 }
 
-// ═══ Disconnect Account ═══
-export async function disconnectAccount(userId: string, network: SocialNetwork): Promise<boolean> {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  if (!supabaseUrl) return false;
-
+export async function disconnectAccount(_userId: string, network: SocialNetwork): Promise<boolean> {
   try {
-    await fetch(`${supabaseUrl}/rest/v1/social_accounts?user_id=eq.${userId}&network=eq.${network}`, {
-      method: 'DELETE',
-      headers: {
-        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || '',
-        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-      },
-    });
+    const raw = localStorage.getItem('blogpost_socials');
+    if (!raw) return false;
+    const list = JSON.parse(raw) as any[];
+    const next = list.map(s => (s.network === network ? { ...s, connected: false, apiKey: '' } : s));
+    localStorage.setItem('blogpost_socials', JSON.stringify(next));
     return true;
   } catch {
     return false;
   }
 }
 
-// ═══ Publish Content ═══
-export async function publishContent(userId: string, options: PublishOptions): Promise<PublishResult[]> {
+// ═══ Publish Content (real publishers) ═══
+export async function publishContent(_userId: string, options: PublishOptions): Promise<PublishResult[]> {
   const results: PublishResult[] = [];
+  const title = options.title || 'BlogPost';
+  const content = options.content || '';
 
   for (const network of options.networks) {
     try {
-      const result = await publishToNetwork(userId, network, options);
-      results.push({ network, success: true, postId: result.postId });
+      let ok = false;
+      let postId: string | undefined;
+      let error: string | undefined;
+
+      if (network === 'telegram') {
+        const { publishToTelegram } = await import('./telegram');
+        const r = await publishToTelegram(title, content, options.imageUrl);
+        ok = r.success; postId = r.messageId != null ? String(r.messageId) : undefined; error = r.error;
+      } else if (network === 'vk') {
+        const { publishToVk } = await import('./vk');
+        const r = await publishToVk(title, content, options.imageUrl);
+        ok = r.success; postId = r.postId; error = r.error;
+      } else if (network === 'youtube') {
+        const { publishToYoutube } = await import('./youtube');
+        const r = await publishToYoutube(title, content, options.videoUrl);
+        ok = r.success; postId = r.videoId; error = r.error;
+      } else if (network === 'tiktok') {
+        const { publishToTiktok } = await import('./tiktok');
+        const r = await publishToTiktok(title, content, options.videoUrl);
+        ok = r.success; postId = r.publishId; error = r.error;
+      } else if (network === 'ok') {
+        const { publishToOk } = await import('./ok');
+        const r = await publishToOk(title, content, options.imageUrl);
+        ok = r.success; postId = r.postId; error = r.error;
+      } else if (network === 'rutube') {
+        const { publishToRutube } = await import('./rutube');
+        const r = await publishToRutube(title, content, options.videoUrl);
+        ok = r.success; postId = r.videoId; error = r.error;
+      } else if (network === 'instagram') {
+        const { publishToInstagram } = await import('./instagram');
+        const r = await publishToInstagram(title, content, options.imageUrl, options.videoUrl);
+        ok = r.success; postId = r.mediaId; error = r.error;
+      } else {
+        error = `Unknown network: ${network}`;
+      }
+
+      results.push({ network, success: ok, postId, error });
     } catch (error: any) {
-      results.push({ network, success: false, error: error.message });
+      results.push({ network, success: false, error: error?.message || 'publish failed' });
     }
   }
 
   return results;
 }
 
-async function publishToNetwork(userId: string, network: SocialNetwork, options: PublishOptions): Promise<{ postId?: string }> {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-
-  if (!supabaseUrl) {
-    // Mock: simulate successful publish
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return { postId: `mock-${Date.now()}` };
-  }
-
-  const response = await fetch(`${supabaseUrl}/functions/v1/social-publish`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-    },
-    body: JSON.stringify({ userId, network, ...options }),
-  });
-
-  if (!response.ok) throw new Error(`Publish to ${network} failed`);
-  return response.json();
-}
-
 // ═══ Schedule Publication ═══
 export async function schedulePublication(userId: string, postId: string, scheduledAt: Date, networks: SocialNetwork[]): Promise<boolean> {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-
-  if (!supabaseUrl) {
-    console.warn('Supabase not configured. Scheduling unavailable.');
-    return false;
-  }
-
   try {
-    await fetch(`${supabaseUrl}/functions/v1/schedule-publish`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify({ userId, postId, scheduledAt: scheduledAt.toISOString(), networks }),
-    });
+    const { updatePost } = await import('./crud');
+    await updatePost(postId, {
+      scheduledAt: scheduledAt.toISOString(),
+      socialNetworks: networks,
+      status: 'scheduled',
+    } as any);
     return true;
-  } catch {
+  } catch (e) {
+    console.warn('schedulePublication failed', e);
     return false;
   }
-}
-
-// ═══ Best Time to Publish ═══
-export function getBestPublishTime(network: SocialNetwork): string {
-  const bestTimes: Record<SocialNetwork, string> = {
-    vk: '18:00-21:00',
-    telegram: '09:00-11:00, 19:00-21:00',
-    youtube: '14:00-16:00',
-    instagram: '11:00-13:00, 19:00-21:00',
-    tiktok: '07:00-09:00, 12:00-13:00, 19:00-22:00',
-    ok: '19:00-22:00',
-    rutube: '18:00-22:00',
-  };
-  return bestTimes[network] || '18:00-21:00';
 }

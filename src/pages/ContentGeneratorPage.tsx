@@ -15,6 +15,12 @@ import { generateText, generateImage as aiGenerateImage, generateAudio, checkGen
 import { buildImagePrompt } from '../services/contentEngine';
 import { loadGeneratorPrefs, saveGeneratorPrefs } from '../services/persistence';
 import { publishToTelegram } from '../services/telegram';
+import { publishToVk } from '../services/vk';
+import { publishToYoutube, pickVideoFromHtml as pickYtVideo } from '../services/youtube';
+import { publishToTiktok, pickVideoFromHtml as pickTtVideo } from '../services/tiktok';
+import { publishToOk } from '../services/ok';
+import { publishToRutube, pickVideoFromHtml as pickRtVideo } from '../services/rutube';
+import { publishToInstagram } from '../services/instagram';
 import { getDueIso, publishPostToNetworks } from '../services/scheduler';
 import type { Post } from '../store/types';
 
@@ -634,6 +640,94 @@ export default function ContentGeneratorPage() {
             successNetworkIds.push('telegram');
           } else {
             errors.push(`Telegram: ${result.error}`);
+          }
+        } else if (network === 'vk') {
+          const image =
+            uploadedImage ||
+            generatedImage ||
+            extractImageSrc(body) ||
+            extractImageSrc(generatedHtml) ||
+            extractImageSrc(getActiveBody());
+          const result = await publishToVk(topic || 'BlogPost', htmlToPlain(body), image || undefined);
+          if (result.success) {
+            successfulNetworks.push('VK');
+            successNetworkIds.push('vk');
+          } else {
+            errors.push(`VK: ${result.error}`);
+          }
+        } else if (network === 'youtube') {
+          const video =
+            pickYtVideo(body) ||
+            pickYtVideo(generatedHtml) ||
+            pickYtVideo(getActiveBody());
+          const result = await publishToYoutube(topic || 'BlogPost', htmlToPlain(body), video);
+          if (result.success) {
+            successfulNetworks.push('YouTube');
+            successNetworkIds.push('youtube');
+          } else {
+            errors.push(`YouTube: ${result.error}`);
+          }
+        } else if (network === 'tiktok') {
+          const video =
+            pickTtVideo(body) ||
+            pickTtVideo(generatedHtml) ||
+            pickTtVideo(getActiveBody());
+          const result = await publishToTiktok(topic || 'BlogPost', htmlToPlain(body), video);
+          if (result.success) {
+            successfulNetworks.push('TikTok');
+            successNetworkIds.push('tiktok');
+          } else {
+            errors.push(`TikTok: ${result.error}`);
+          }
+        } else if (network === 'ok') {
+          const image =
+            uploadedImage ||
+            generatedImage ||
+            extractImageSrc(body) ||
+            extractImageSrc(generatedHtml) ||
+            extractImageSrc(getActiveBody());
+          const result = await publishToOk(topic || 'BlogPost', htmlToPlain(body), image || undefined);
+          if (result.success) {
+            successfulNetworks.push('ОК');
+            successNetworkIds.push('ok');
+          } else {
+            errors.push(`ОК: ${result.error}`);
+          }
+        } else if (network === 'rutube') {
+          const video =
+            pickRtVideo(body) ||
+            pickRtVideo(generatedHtml) ||
+            pickRtVideo(getActiveBody());
+          const result = await publishToRutube(topic || 'BlogPost', htmlToPlain(body), video);
+          if (result.success) {
+            successfulNetworks.push('Rutube');
+            successNetworkIds.push('rutube');
+          } else {
+            errors.push(`Rutube: ${result.error}`);
+          }
+        } else if (network === 'instagram') {
+          const image =
+            uploadedImage ||
+            generatedImage ||
+            extractImageSrc(body) ||
+            extractImageSrc(generatedHtml) ||
+            extractImageSrc(getActiveBody());
+          const video =
+            pickYtVideo(body) ||
+            pickTtVideo(body) ||
+            pickRtVideo(body) ||
+            undefined;
+          const result = await publishToInstagram(
+            topic || 'BlogPost',
+            htmlToPlain(body),
+            image || undefined,
+            video
+          );
+          if (result.success) {
+            successfulNetworks.push('Instagram');
+            successNetworkIds.push('instagram');
+          } else {
+            errors.push(`Instagram: ${result.error}`);
           }
         } else {
           successfulNetworks.push(network.charAt(0).toUpperCase() + network.slice(1));

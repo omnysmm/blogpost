@@ -1,6 +1,12 @@
 // Auto-publish scheduler — publishes queued posts when their scheduled time is due
 import type { Post } from '../store/types';
 import { publishToTelegram } from './telegram';
+import { publishToVk } from './vk';
+import { publishToYoutube, pickVideoFromHtml as pickYtVideo } from './youtube';
+import { publishToTiktok, pickVideoFromHtml as pickTtVideo } from './tiktok';
+import { publishToOk } from './ok';
+import { publishToRutube, pickVideoFromHtml as pickRtVideo } from './rutube';
+import { publishToInstagram } from './instagram';
 
 function loadConnectedNetworks(): Record<string, boolean> {
   try {
@@ -108,6 +114,13 @@ export async function publishPostToNetworks(post: Post): Promise<{ success: stri
     return { success, errors };
   }
 
+  const videoSrc =
+    pickYtVideo(post.content || '') ||
+    pickTtVideo(post.content || '') ||
+    pickRtVideo(post.content || '') ||
+    (post as any).videoUrl ||
+    undefined;
+
   for (const network of networks) {
     try {
       if (network === 'telegram') {
@@ -115,6 +128,30 @@ export async function publishPostToNetworks(post: Post): Promise<{ success: stri
         const result = await publishToTelegram(title, text, imageSrc);
         if (result.success) success.push('telegram');
         else errors.push(`Telegram: ${result.error}`);
+      } else if (network === 'vk') {
+        const result = await publishToVk(title, text, imageSrc);
+        if (result.success) success.push('vk');
+        else errors.push(`VK: ${result.error}`);
+      } else if (network === 'youtube') {
+        const result = await publishToYoutube(title, text, videoSrc);
+        if (result.success) success.push('youtube');
+        else errors.push(`YouTube: ${result.error}`);
+      } else if (network === 'tiktok') {
+        const result = await publishToTiktok(title, text, videoSrc);
+        if (result.success) success.push('tiktok');
+        else errors.push(`TikTok: ${result.error}`);
+      } else if (network === 'ok') {
+        const result = await publishToOk(title, text, imageSrc);
+        if (result.success) success.push('ok');
+        else errors.push(`ОК: ${result.error}`);
+      } else if (network === 'rutube') {
+        const result = await publishToRutube(title, text, videoSrc);
+        if (result.success) success.push('rutube');
+        else errors.push(`Rutube: ${result.error}`);
+      } else if (network === 'instagram') {
+        const result = await publishToInstagram(title, text, imageSrc, videoSrc);
+        if (result.success) success.push('instagram');
+        else errors.push(`Instagram: ${result.error}`);
       } else if (connected[network]) {
         // Other networks (no public API yet): mark as published locally
         success.push(network);

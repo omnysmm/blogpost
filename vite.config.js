@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import crypto from "node:crypto";
 
 /** Local template-based content generator (last resort when all APIs are down) */
 function generateLocalContent(prompt, language) {
@@ -420,6 +421,536 @@ function aiProxyPlugin() {
             res.end(JSON.stringify({ ok: false, description: (e && e.message) || "telegram proxy error" }));
           }
         });
+      });
+
+      // ═══ Social publish proxies: VK / YouTube / TikTok (CORS-safe) ═══
+      function readJsonBody(req) {
+        return new Promise((resolve, reject) => {
+          const chunks = [];
+          req.on("data", (c) => chunks.push(c));
+          req.on("end", () => {
+            try {
+              const raw = Buffer.concat(chunks);
+              if (!raw.length) return resolve({});
+              // Strip UTF-8 BOM — breaks JSON.parse
+              let text = raw.toString("utf8");
+              if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+              resolve(JSON.parse(text));
+            } catch (e) {
+              reject(e);
+            }
+          });
+          req.on("error", reject);
+        });
+      }
+
+      function sendJson(res, status, obj) {
+        res.statusCode = status;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.end(JSON.stringify(obj));
+      }
+
+      function b64ToBuffer(b64) {
+        return Buffer.from(String(b64 || "").replace(/\s/g, ""), "base64");
+      }
+
+      function buildMultipart(fields, fileField, fileBuf, mime, filename) {
+        const boundary = "----BlogPostSocial" + Math.random().toString(16).slice(2);
+        const chunks = [];
+        for (const [name, value] of Object.entries(fields)) {
+          if (value == null || value === "") continue;
+          chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${String(value)}\r\n`));
+        }
+        if (fileBuf) {
+          chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${fileField}"; filename="${filename || "file.bin"}"\r\nContent-Type: ${mime || "application/octet-stream"}\r\n\r\n`));
+          chunks.push(Buffer.isBuffer(fileBuf) ? fileBuf : Buffer.from(fileBuf));
+          chunks.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+        } else {
+          chunks.push(Buffer.from(`--${boundary}--\r\n`));
+        }
+        return { body: Buffer.concat(chunks), contentType: `multipart/form-data; boundary=${boundary}` };
+      }
+
+      // ── VK ──
+      server.middlewares.use("/api/vk/method", (req, res) => {
+        (async () => {
+          try {
+            const parsed = await readJsonBody(req);
+            const method = String(parsed.method || "wall.post");
+            const params = parsed.params || {};
+            const body = new URLSearchParams();
+            for (const [k, v] of Object.entries(params)) {
+              if (v == null || v === "") continue;
+              body.append(k, String(v));
+            }
+            const r = await fetch(`https://api.vk.com/method/${method}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body,
+              signal: AbortSignal.timeout(60000),
+            });
+            const text = await r.text();
+            res.statusCode = 200;
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(text);
+          } catch (e) {
+            sendJson(res, 502, { error: { error_msg: (e && e.message) || "vk proxy error" } });
+          }
+        })();
+      });
+
+      server.middlewares.use("/api/vk/upload-photo", (req, res) => {
+        (async () => {
+          try {
+            const parsed = await readJsonBody(req);
+            const uploadUrl = parsed.uploadUrl;
+            if (!uploadUrl) return sendJson(res, 400, { error: "missing uploadUrl" });
+            const buf = b64ToBuffer(parsed.photoBase64);
+            const mp = buildMultipart({}, "photo", buf, parsed.photoMime || "image/jpeg", parsed.photoName || "image.jpg");
+            const r = await fetch(uploadUrl, {
+              method: "POST",
+              headers: { "Content-Type": mp.contentType },
+              body: mp.body,
+              signal: AbortSignal.timeout(120000),
+            });
+            const text = await r.text();
+            res.statusCode = r.status;
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(text);
+          } catch (e) {
+            sendJson(res, 502, { error: (e && e.message) || "vk upload error" });
+          }
+        })();
+      });
+
+      // ── YouTube (Data API v3 resumable upload) ──
+      server.middlewares.use("/api/youtube/upload", (req, res) => {
+        (async () => {
+          try {
+            const parsed = await readJsonBody(req);
+            const accessToken = parsed.accessToken;
+            if (!accessToken) return sendJson(res, 400, { error: "missing accessToken" });
+            const videoBuf = b64ToBuffer(parsed.videoBase64);
+            if (!videoBuf.length) return sendJson(res, 400, { error: "empty video" });
+
+            const meta = {
+              snippet: {
+                title: String(parsed.title || "BlogPost video").slice(0, 100),
+                description: String(parsed.description || "").slice(0, 4800),
+                categoryId: "22",
+              },
+              status: {
+                privacyStatus: parsed.privacyStatus || "public",
+                selfDeclaredMadeForKids: false,
+              },
+            };
+
+            // Step 1: start resumable session
+            const init = await fetch("https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json; charset=utf-8",
+                "X-Upload-Content-Length": String(videoBuf.length),
+                "X-Upload-Content-Type": parsed.videoMime || "video/mp4",
+              },
+              body: JSON.stringify(meta),
+              signal: AbortSignal.timeout(60000),
+            });
+            const location = init.headers.get("location") || init.headers.get("Location");
+            if (!location) {
+              const errText = await init.text();
+              return sendJson(res, init.status || 502, { error: errText || "no upload session" });
+            }
+
+            // Step 2: upload bytes
+            const up = await fetch(location, {
+              method: "PUT",
+              headers: {
+                "Content-Type": parsed.videoMime || "video/mp4",
+                "Content-Length": String(videoBuf.length),
+              },
+              body: videoBuf,
+              signal: AbortSignal.timeout(15 * 60 * 1000),
+            });
+            const raw = await up.text();
+            if (!up.ok) return sendJson(res, up.status, { error: raw || "upload failed" });
+            const data = JSON.parse(raw);
+            const videoId = data?.id;
+            sendJson(res, 200, {
+              success: true,
+              videoId,
+              id: videoId,
+              url: videoId ? `https://youtu.be/${videoId}` : undefined,
+            });
+          } catch (e) {
+            sendJson(res, 502, { error: (e && e.message) || "youtube upload error" });
+          }
+        })();
+      });
+
+      server.middlewares.use("/api/youtube/channels", (req, res) => {
+        (async () => {
+          try {
+            const parsed = await readJsonBody(req);
+            const accessToken = parsed.accessToken;
+            if (!accessToken) return sendJson(res, 400, { error: "missing accessToken" });
+            const r = await fetch("https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true", {
+              headers: { Authorization: `Bearer ${accessToken}` },
+              signal: AbortSignal.timeout(30000),
+            });
+            const text = await r.text();
+            res.statusCode = r.status;
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(text);
+          } catch (e) {
+            sendJson(res, 502, { error: (e && e.message) || "youtube channels error" });
+          }
+        })();
+      });
+
+      // ── TikTok Content Posting API v2 ──
+      server.middlewares.use("/api/tiktok/user", (req, res) => {
+        (async () => {
+          try {
+            const parsed = await readJsonBody(req);
+            const accessToken = parsed.accessToken;
+            if (!accessToken) return sendJson(res, 400, { error: "missing accessToken" });
+            const fields = "open_id,display_name,avatar_url";
+            const url = `https://open.tiktokapis.com/v2/user/info/?fields=${encodeURIComponent(fields)}`;
+            const r = await fetch(url, {
+              headers: { Authorization: `Bearer ${accessToken}` },
+              signal: AbortSignal.timeout(30000),
+            });
+            const text = await r.text();
+            res.statusCode = r.status;
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(text);
+          } catch (e) {
+            sendJson(res, 502, { error: (e && e.message) || "tiktok user error" });
+          }
+        })();
+      });
+
+      server.middlewares.use("/api/tiktok/publish", (req, res) => {
+        (async () => {
+          try {
+            const parsed = await readJsonBody(req);
+            const accessToken = parsed.accessToken;
+            if (!accessToken) return sendJson(res, 400, { error: "missing accessToken" });
+
+            const postInfo = {
+              title: String(parsed.title || "BlogPost").slice(0, 2200),
+              privacy_level: "SELF_ONLY", // safest default — user can change in TikTok
+              disable_duet: false,
+              disable_comment: false,
+              disable_stitch: false,
+            };
+
+            let source;
+            if (parsed.mode === "pull" && parsed.videoUrl) {
+              source = {
+                source: "PULL_FROM_URL",
+                video_url: parsed.videoUrl,
+              };
+            } else {
+              // FILE_UPLOAD — create session, upload bytes, then status
+              source = {
+                source: "FILE_UPLOAD",
+                video_size: b64ToBuffer(parsed.videoBase64).length,
+                chunk_size: b64ToBuffer(parsed.videoBase64).length,
+                total_chunk_count: 1,
+              };
+            }
+
+            const initBody = {
+              post_info: postInfo,
+              source_info: source,
+            };
+
+            const init = await fetch("https://open.tiktokapis.com/v2/post/publish/video/init/", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json; charset=utf-8",
+              },
+              body: JSON.stringify(initBody),
+              signal: AbortSignal.timeout(60000),
+            });
+            const initData = await init.json().catch(() => ({}));
+            if (!init.ok || initData?.error?.code) {
+              return sendJson(res, init.status || 400, {
+                error: initData?.error?.message || initData?.error?.code || "TikTok init failed",
+                detail: initData,
+              });
+            }
+
+            const publishId = initData?.data?.publish_id;
+            const uploadUrl = initData?.data?.upload_url;
+
+            // FILE_UPLOAD needs a PUT of video bytes
+            if (parsed.mode !== "pull" && uploadUrl) {
+              const buf = b64ToBuffer(parsed.videoBase64);
+              const put = await fetch(uploadUrl, {
+                method: "PUT",
+                headers: {
+                  "Content-Type": "video/mp4",
+                  "Content-Range": `bytes 0-${buf.length - 1}/${buf.length}`,
+                },
+                body: buf,
+                signal: AbortSignal.timeout(15 * 60 * 1000),
+              });
+              if (!put.ok) {
+                const t = await put.text();
+                return sendJson(res, put.status, { error: t || "TikTok upload failed", publishId });
+              }
+            }
+
+            sendJson(res, 200, { success: true, publishId, publish_id: publishId });
+          } catch (e) {
+            sendJson(res, 502, { error: (e && e.message) || "tiktok publish error" });
+          }
+        })();
+      });
+
+      // ── Instagram Graph API ──
+      server.middlewares.use("/api/instagram/graph", (req, res) => {
+        (async () => {
+          try {
+            const parsed = await readJsonBody(req);
+            const method = String(parsed.method || req.method || "GET").toUpperCase();
+            const rawPath = String(parsed.path || (req.url || "").split("path=")[1] || "/me");
+            const path = decodeURIComponent(rawPath.split("&")[0]);
+            const token = String(parsed.access_token || parsed.accessToken || "");
+            if (!token) return sendJson(res, 400, { error: "missing access_token" });
+
+            const url = new URL(`https://graph.facebook.com/v19.0${path.startsWith("/") ? path : "/" + path}`);
+            url.searchParams.set("access_token", token);
+            if (method === "GET" && req.url && req.url.includes("?")) {
+              const incoming = new URL(req.url, "http://localhost").searchParams;
+              for (const [k, v] of incoming.entries()) {
+                if (k === "path" || k === "access_token" || k === "accessToken") continue;
+                if (v) url.searchParams.set(k, v);
+              }
+            }
+
+            let body;
+            if (method !== "GET") {
+              const form = new URLSearchParams();
+              form.set("access_token", token);
+              for (const [k, v] of Object.entries(parsed)) {
+                if (k === "path" || k === "method" || k === "access_token" || k === "accessToken") continue;
+                if (v == null || v === "") continue;
+                form.append(k, String(v));
+              }
+              body = form;
+            }
+
+            const r = await fetch(url.toString(), {
+              method,
+              headers: body
+                ? { "Content-Type": "application/x-www-form-urlencoded" }
+                : undefined,
+              body,
+              signal: AbortSignal.timeout(60000),
+            });
+            const text = await r.text();
+            res.statusCode = r.status;
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(text);
+          } catch (e) {
+            sendJson(res, 502, { error: (e && e.message) || "instagram graph error" });
+          }
+        })();
+      });
+
+      // ── OK.ru (fb.do + signed mediatopic) ──
+      function okSign(params, secret) {
+        const keys = Object.keys(params)
+          .filter((k) => k !== "sig" && k !== "access_token" && params[k] != null && params[k] !== "")
+          .sort();
+        let raw = "";
+        for (const k of keys) raw += k + "=" + String(params[k]);
+        raw += secret || "";
+        return crypto.createHash("md5").update(raw, "utf8").digest("hex");
+      }
+
+      server.middlewares.use("/api/ok/fb", (req, res) => {
+        (async () => {
+          try {
+            const parsed = await readJsonBody(req);
+            const accessToken = String(parsed.accessToken || "");
+            const appKey = String(parsed.applicationKey || "");
+            const secret = String(parsed.secretKey || "");
+            const inner = parsed.params || {};
+            if (!accessToken) return sendJson(res, 400, { error: "missing accessToken" });
+            if (!appKey) return sendJson(res, 400, { error: "missing applicationKey" });
+
+            const form = new URLSearchParams();
+            form.append("application_key", appKey);
+            form.append("access_token", accessToken);
+            form.append("format", "json");
+            for (const [k, v] of Object.entries(inner)) {
+              if (v == null || v === "") continue;
+              form.append(k, String(v));
+            }
+            const sigParams = { application_key: appKey, format: "json" };
+            for (const [k, v] of Object.entries(inner)) {
+              if (v == null || v === "") continue;
+              sigParams[k] = String(v);
+            }
+            form.append("sig", okSign(sigParams, secret));
+
+            const r = await fetch("https://api.ok.ru/fb.do", {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: form,
+              signal: AbortSignal.timeout(60000),
+            });
+            const text = await r.text();
+            res.statusCode = 200;
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(text);
+          } catch (e) {
+            sendJson(res, 502, { error: (e && e.message) || "ok proxy error" });
+          }
+        })();
+      });
+
+      server.middlewares.use("/api/ok/upload-photo", (req, res) => {
+        (async () => {
+          try {
+            const parsed = await readJsonBody(req);
+            const uploadUrl = parsed.uploadUrl;
+            if (!uploadUrl) return sendJson(res, 400, { error: "missing uploadUrl" });
+            const buf = b64ToBuffer(parsed.photoBase64);
+            const mp = buildMultipart({ pic1: "" }, "pic1", buf, parsed.photoMime || "image/jpeg", parsed.photoName || "image.jpg");
+            // OK photo upload expects field "pic1"
+            const boundary = mp.contentType.split("boundary=")[1];
+            const chunks = [];
+            chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="pic1"; filename="${parsed.photoName || "image.jpg"}"\r\nContent-Type: ${parsed.photoMime || "image/jpeg"}\r\n\r\n`));
+            chunks.push(buf);
+            chunks.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+            const body = Buffer.concat(chunks);
+            const r = await fetch(uploadUrl, {
+              method: "POST",
+              headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
+              body,
+              signal: AbortSignal.timeout(120000),
+            });
+            const text = await r.text();
+            res.statusCode = r.status;
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(text);
+          } catch (e) {
+            sendJson(res, 502, { error: (e && e.message) || "ok upload error" });
+          }
+        })();
+      });
+
+      // ── Rutube ──
+      function rutubeHeaders(apiKey) {
+        return { "Rutube-Api-Key": String(apiKey || "") };
+      }
+
+      server.middlewares.use("/api/rutube/me", (req, res) => {
+        (async () => {
+          try {
+            const parsed = await readJsonBody(req);
+            if (!parsed.apiKey) return sendJson(res, 400, { error: "missing apiKey" });
+            const r = await fetch("https://rutube.ru/api/whoami/", {
+              headers: rutubeHeaders(parsed.apiKey),
+              signal: AbortSignal.timeout(30000),
+            });
+            const text = await r.text();
+            res.statusCode = r.status;
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(text);
+          } catch (e) {
+            sendJson(res, 502, { error: (e && e.message) || "rutube me error" });
+          }
+        })();
+      });
+
+      server.middlewares.use("/api/rutube/from-url", (req, res) => {
+        (async () => {
+          try {
+            const parsed = await readJsonBody(req);
+            if (!parsed.apiKey) return sendJson(res, 400, { error: "missing apiKey" });
+            const r = await fetch("https://rutube.ru/api/video/from_url/", {
+              method: "POST",
+              headers: {
+                ...rutubeHeaders(parsed.apiKey),
+                "Content-Type": "application/json; charset=utf-8",
+              },
+              body: JSON.stringify({
+                url: parsed.url,
+                title: String(parsed.title || "BlogPost video").slice(0, 150),
+                description: String(parsed.description || "").slice(0, 5000),
+                is_private: !!parsed.isPrivate,
+              }),
+              signal: AbortSignal.timeout(120000),
+            });
+            const data = await r.json().catch(() => ({}));
+            const videoId = data?.id || data?.video_id || data?.data?.id;
+            sendJson(res, r.ok && videoId ? 200 : r.status || 400, {
+              success: !!videoId,
+              videoId: videoId != null ? String(videoId) : undefined,
+              url: videoId ? `https://rutube.ru/video/${videoId}/` : undefined,
+              error: !videoId ? (data?.detail || data?.error || data?.message || "Rutube from_url failed") : undefined,
+              raw: data,
+            });
+          } catch (e) {
+            sendJson(res, 502, { error: (e && e.message) || "rutube from_url error" });
+          }
+        })();
+      });
+
+      server.middlewares.use("/api/rutube/upload", (req, res) => {
+        (async () => {
+          try {
+            const parsed = await readJsonBody(req);
+            if (!parsed.apiKey) return sendJson(res, 400, { error: "missing apiKey" });
+            const buf = b64ToBuffer(parsed.videoBase64);
+            if (!buf.length) return sendJson(res, 400, { error: "empty video" });
+
+            const boundary = "----RutubeUpload" + Math.random().toString(16).slice(2);
+            const chunks = [];
+            const fields = {
+              title: String(parsed.title || "BlogPost video").slice(0, 150),
+              description: String(parsed.description || "").slice(0, 5000),
+              is_private: parsed.isPrivate ? "1" : "0",
+              category: "22",
+            };
+            for (const [name, value] of Object.entries(fields)) {
+              chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${String(value)}\r\n`));
+            }
+            chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="video.mp4"\r\nContent-Type: ${parsed.videoMime || "video/mp4"}\r\n\r\n`));
+            chunks.push(buf);
+            chunks.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+
+            const r = await fetch("https://rutube.ru/api/video/upload/", {
+              method: "POST",
+              headers: {
+                ...rutubeHeaders(parsed.apiKey),
+                "Content-Type": `multipart/form-data; boundary=${boundary}`,
+              },
+              body: Buffer.concat(chunks),
+              signal: AbortSignal.timeout(15 * 60 * 1000),
+            });
+            const data = await r.json().catch(() => ({}));
+            const videoId = data?.id || data?.video_id || data?.data?.id;
+            sendJson(res, r.ok && videoId ? 200 : r.status || 400, {
+              success: !!videoId,
+              videoId: videoId != null ? String(videoId) : undefined,
+              url: videoId ? `https://rutube.ru/video/${videoId}/` : undefined,
+              error: !videoId ? (data?.detail || data?.error || data?.message || "Rutube upload failed") : undefined,
+              raw: data,
+            });
+          } catch (e) {
+            sendJson(res, 502, { error: (e && e.message) || "rutube upload error" });
+          }
+        })();
       });
     },
   };

@@ -379,6 +379,255 @@ export default function SettingsPage() {
                         </button>
                       </div>
                     </>)}
+
+                    {social.network === 'vk' && (<>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          {language === 'ru' ? 'Owner ID (группа или пользователь)' : 'Owner ID (group or user)'}
+                        </label>
+                        <input
+                          type="text"
+                          value={social.accountId || ''}
+                          onChange={e => saveSocials(socials.map(s => s.id === social.id ? { ...s, accountId: e.target.value } : s))}
+                          className="w-full p-2.5 border border-slate-200 rounded-lg text-sm font-mono"
+                          placeholder={language === 'ru' ? 'Например: -123456789 (группа) или 123456 (пользователь)' : 'e.g.: -123456789 (group) or 123456 (user)'}
+                        />
+                        <p className="text-xs text-slate-500 mt-1">
+                          {language === 'ru'
+                            ? 'Пусто = стена текущего пользователя. Для группы укажите ID со знаком минус. API Key = access_token (wall, photos, groups).'
+                            : 'Empty = current user wall. For a group use a negative ID. API Key = access_token (wall, photos, groups).'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={async () => {
+                            if (!social.apiKey) {
+                              showSaveError(language === 'ru' ? 'Заполните access_token (API Key) для VK' : 'Fill in VK access_token (API Key)');
+                              return;
+                            }
+                            try {
+                              const { testVkConnection } = await import('../services/vk');
+                              const result = await testVkConnection();
+                              if (result.ok) showSaveSuccess(`${language === 'ru' ? 'VK подключён' : 'VK connected'}: ${result.label || ''}`);
+                              else showSaveError(result.error || 'VK error');
+                            } catch (e: any) {
+                              showSaveError(e.message);
+                            }
+                          }}
+                          className="px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition flex items-center gap-2"
+                        >
+                          <Zap size={14} /> {language === 'ru' ? 'Тест' : 'Test'}
+                        </button>
+                      </div>
+                    </>)}
+
+                    {social.network === 'youtube' && (<>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          {language === 'ru' ? 'Приватность видео' : 'Video privacy'}
+                        </label>
+                        <select
+                          value={['public', 'unlisted', 'private'].includes((social.accountId || 'public').toLowerCase()) ? (social.accountId || 'public').toLowerCase() : 'public'}
+                          onChange={e => saveSocials(socials.map(s => s.id === social.id ? { ...s, accountId: e.target.value } : s))}
+                          className="w-full p-2.5 border border-slate-200 rounded-lg text-sm"
+                        >
+                          <option value="public">{language === 'ru' ? 'Публичное (public)' : 'Public'}</option>
+                          <option value="unlisted">{language === 'ru' ? 'По ссылке (unlisted)' : 'Unlisted'}</option>
+                          <option value="private">{language === 'ru' ? 'Приватное (private)' : 'Private'}</option>
+                        </select>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {language === 'ru'
+                            ? 'API Key = OAuth access_token с scope youtube.upload. Для YouTube нужен видеофайл (MP4).'
+                            : 'API Key = OAuth access_token with youtube.upload scope. YouTube requires a video file (MP4).'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={async () => {
+                            if (!social.apiKey) {
+                              showSaveError(language === 'ru' ? 'Заполните OAuth access_token (API Key) для YouTube' : 'Fill in YouTube OAuth access_token (API Key)');
+                              return;
+                            }
+                            try {
+                              const { testYoutubeConnection } = await import('../services/youtube');
+                              const result = await testYoutubeConnection();
+                              if (result.ok) showSaveSuccess(`${language === 'ru' ? 'YouTube подключён' : 'YouTube connected'}: ${result.label || ''}`);
+                              else showSaveError(result.error || 'YouTube error');
+                            } catch (e: any) {
+                              showSaveError(e.message);
+                            }
+                          }}
+                          className="px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition flex items-center gap-2"
+                        >
+                          <Zap size={14} /> {language === 'ru' ? 'Тест' : 'Test'}
+                        </button>
+                      </div>
+                    </>)}
+
+                    {social.network === 'tiktok' && (<>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          Open ID {language === 'ru' ? '(необязательно)' : '(optional)'}
+                        </label>
+                        <input
+                          type="text"
+                          value={social.accountId || ''}
+                          onChange={e => saveSocials(socials.map(s => s.id === social.id ? { ...s, accountId: e.target.value } : s))}
+                          className="w-full p-2.5 border border-slate-200 rounded-lg text-sm font-mono"
+                          placeholder="open_id"
+                        />
+                        <p className="text-xs text-slate-500 mt-1">
+                          {language === 'ru'
+                            ? 'API Key = access_token (scope video.publish, video.upload). Для TikTok нужен видеофайл (MP4).'
+                            : 'API Key = access_token (video.publish, video.upload scopes). TikTok requires a video file (MP4).'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={async () => {
+                            if (!social.apiKey) {
+                              showSaveError(language === 'ru' ? 'Заполните access_token (API Key) для TikTok' : 'Fill in TikTok access_token (API Key)');
+                              return;
+                            }
+                            try {
+                              const { testTiktokConnection } = await import('../services/tiktok');
+                              const result = await testTiktokConnection();
+                              if (result.ok) showSaveSuccess(`${language === 'ru' ? 'TikTok подключён' : 'TikTok connected'}: ${result.label || ''}`);
+                              else showSaveError(result.error || 'TikTok error');
+                            } catch (e: any) {
+                              showSaveError(e.message);
+                            }
+                          }}
+                          className="px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition flex items-center gap-2"
+                        >
+                          <Zap size={14} /> {language === 'ru' ? 'Тест' : 'Test'}
+                        </button>
+                      </div>
+                    </>)}
+
+                    {social.network === 'ok' && (<>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          {language === 'ru' ? 'Application Key | Secret Key' : 'Application Key | Secret Key'}
+                        </label>
+                        <input
+                          type="text"
+                          value={social.accountId || ''}
+                          onChange={e => saveSocials(socials.map(s => s.id === social.id ? { ...s, accountId: e.target.value } : s))}
+                          className="w-full p-2.5 border border-slate-200 rounded-lg text-sm font-mono"
+                          placeholder="APP_KEY|SECRET_KEY"
+                        />
+                        <p className="text-xs text-slate-500 mt-1">
+                          {language === 'ru'
+                            ? 'API Key = access_token (mediatopic, photos, users). Account ID = application_key|secret_key через вертикальную черту.'
+                            : 'API Key = access_token (mediatopic, photos, users). Account ID = application_key|secret_key separated by a pipe.'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={async () => {
+                            if (!social.apiKey || !social.accountId) {
+                              showSaveError(language === 'ru' ? 'Заполните access_token и application_key для ОК' : 'Fill in OK access_token and application_key');
+                              return;
+                            }
+                            try {
+                              const { testOkConnection } = await import('../services/ok');
+                              const result = await testOkConnection();
+                              if (result.ok) showSaveSuccess(`${language === 'ru' ? 'ОК подключён' : 'OK connected'}: ${result.label || ''}`);
+                              else showSaveError(result.error || 'OK error');
+                            } catch (e: any) {
+                              showSaveError(e.message);
+                            }
+                          }}
+                          className="px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition flex items-center gap-2"
+                        >
+                          <Zap size={14} /> {language === 'ru' ? 'Тест' : 'Test'}
+                        </button>
+                      </div>
+                    </>)}
+
+                    {social.network === 'rutube' && (<>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          {language === 'ru' ? 'Приватность видео' : 'Video privacy'}
+                        </label>
+                        <select
+                          value={social.accountId === '1' ? '1' : '0'}
+                          onChange={e => saveSocials(socials.map(s => s.id === social.id ? { ...s, accountId: e.target.value } : s))}
+                          className="w-full p-2.5 border border-slate-200 rounded-lg text-sm"
+                        >
+                          <option value="0">{language === 'ru' ? 'Публичное' : 'Public'}</option>
+                          <option value="1">{language === 'ru' ? 'Приватное' : 'Private'}</option>
+                        </select>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {language === 'ru'
+                            ? 'API Key = Rutube-Api-Key из личного кабинета разработчика. Для Rutube нужен видеофайл (MP4).'
+                            : 'API Key = Rutube-Api-Key from the developer console. Rutube requires a video file (MP4).'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={async () => {
+                            if (!social.apiKey) {
+                              showSaveError(language === 'ru' ? 'Заполните Rutube-Api-Key (API Key)' : 'Fill in Rutube-Api-Key (API Key)');
+                              return;
+                            }
+                            try {
+                              const { testRutubeConnection } = await import('../services/rutube');
+                              const result = await testRutubeConnection();
+                              if (result.ok) showSaveSuccess(`${language === 'ru' ? 'Rutube подключён' : 'Rutube connected'}: ${result.label || ''}`);
+                              else showSaveError(result.error || 'Rutube error');
+                            } catch (e: any) {
+                              showSaveError(e.message);
+                            }
+                          }}
+                          className="px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition flex items-center gap-2"
+                        >
+                          <Zap size={14} /> {language === 'ru' ? 'Тест' : 'Test'}
+                        </button>
+                      </div>
+                    </>)}
+
+                    {social.network === 'instagram' && (<>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                          IG User ID {language === 'ru' ? '(необязательно)' : '(optional)'}
+                        </label>
+                        <input
+                          type="text"
+                          value={social.accountId || ''}
+                          onChange={e => saveSocials(socials.map(s => s.id === social.id ? { ...s, accountId: e.target.value } : s))}
+                          className="w-full p-2.5 border border-slate-200 rounded-lg text-sm font-mono"
+                          placeholder="17841400000000000"
+                        />
+                        <p className="text-xs text-slate-500 mt-1">
+                          {language === 'ru'
+                            ? 'API Key = Graph access_token (instagram_basic, instagram_content_publish). Пустой IG User ID — определим автоматически. Медиа — только публичная https-ссылка.'
+                            : 'API Key = Graph access_token (instagram_basic, instagram_content_publish). Empty IG User ID is auto-detected. Media must be a public https URL.'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={async () => {
+                            if (!social.apiKey) {
+                              showSaveError(language === 'ru' ? 'Заполните access_token (API Key) для Instagram' : 'Fill in Instagram access_token (API Key)');
+                              return;
+                            }
+                            try {
+                              const { testInstagramConnection } = await import('../services/instagram');
+                              const result = await testInstagramConnection();
+                              if (result.ok) showSaveSuccess(`${language === 'ru' ? 'Instagram подключён' : 'Instagram connected'}: ${result.label || ''}`);
+                              else showSaveError(result.error || 'Instagram error');
+                            } catch (e: any) {
+                              showSaveError(e.message);
+                            }
+                          }}
+                          className="px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition flex items-center gap-2"
+                        >
+                          <Zap size={14} /> {language === 'ru' ? 'Тест' : 'Test'}
+                        </button>
+                      </div>
+                    </>)}
                   </>)}
                   {social.method === 'manual' && (
                     <div>

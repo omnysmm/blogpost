@@ -8,3 +8,8 @@ build/
 .env.*.local
 supabase/.temp/
 logs/
+.playwright-cli/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/

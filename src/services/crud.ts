@@ -228,7 +228,24 @@ export async function updateUserRole(userId: string, role: string) {
 }
 
 export async function banUser(userId: string) {
-  return updateById('profiles', userId, { role: 'banned' });
+  return updateById('profiles', userId, { status: 'banned' } as any);
+}
+
+export async function unbanUser(userId: string) {
+  return updateById('profiles', userId, { status: 'active' } as any);
+}
+
+// ═══ Admin: All Posts (moderation) ═══
+
+export async function fetchAllPosts() {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from('posts').select('*').order('created_at', { ascending: false }).limit(200);
+  if (error) return [];
+  return data || [];
+}
+
+export async function adminSetPostStatus(postId: string, status: string) {
+  return updateById('posts', postId, { status });
 }
 
 // ═══ Admin: Platform Stats ═══

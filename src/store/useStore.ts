@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { generateText, generateImage, generateAudio, checkGenerationLimit } from '../services/ai';
-import { fetchPosts, createPost, updatePost as crudUpdatePost, deletePost as crudDeletePost, fetchAnalytics as crudFetchAnalytics, upsertAnalytics, fetchPlatformStats, fetchAllUsers, validatePromoCode, exportToCSV, fetchAutoTasks as crudFetchAutoTasks, upsertAutoTask as crudUpsertAutoTask, deleteAutoTask as crudDeleteAutoTask } from '../services/crud';
+import { fetchPosts, createPost, updatePost as crudUpdatePost, deletePost as crudDeletePost, fetchAnalytics as crudFetchAnalytics, upsertAnalytics, fetchPlatformStats, fetchAllUsers, fetchAllPosts, updateUserRole, banUser, unbanUser, adminSetPostStatus, validatePromoCode, exportToCSV, fetchAutoTasks as crudFetchAutoTasks, upsertAutoTask as crudUpsertAutoTask, deleteAutoTask as crudDeleteAutoTask } from '../services/crud';
 import {
   loadPosts as loadLocalPosts,
   savePosts as saveLocalPosts,
@@ -63,10 +63,16 @@ interface AppState {
   processDueAutoTasks: () => Promise<number>;
   loadPlatformStats: () => Promise<void>;
   loadAllUsers: () => Promise<void>;
+  loadAllPostsAdmin: () => Promise<void>;
+  adminSetRole: (userId: string, role: string) => Promise<void>;
+  adminBan: (userId: string) => Promise<void>;
+  adminUnban: (userId: string) => Promise<void>;
+  adminModeratePost: (postId: string, status: string) => Promise<void>;
   applyPromo: (code: string) => Promise<{ valid: boolean; discount: number; type: string } | null>;
   exportAnalyticsCSV: () => void;
   platformStats: { users: number; posts: number; revenue: number; pending: number };
   allUsers: any[];
+  allPosts: any[];
 }
 
 const defaultAdBlocks: AdBlock[] = [
@@ -134,6 +140,7 @@ export const useStore = create<AppState>((set, get) => ({
   currentPage: getInitialPage(),
   platformStats: { users: 0, posts: 0, revenue: 0, pending: 0 },
   allUsers: [],
+  allPosts: [],
   dataLoadedFor: null,
   autoTasks: [],
 
@@ -810,6 +817,36 @@ export const useStore = create<AppState>((set, get) => ({
     if (!isSupabaseConfigured) return;
     const users = await fetchAllUsers();
     set({ allUsers: users });
+  },
+
+  loadAllPostsAdmin: async () => {
+    if (!isSupabaseConfigured) return;
+    const posts = await fetchAllPosts();
+    set({ allPosts: posts });
+  },
+
+  adminSetRole: async (userId, role) => {
+    await updateUserRole(userId, role);
+    const users = await fetchAllUsers();
+    set({ allUsers: users });
+  },
+
+  adminBan: async (userId) => {
+    await banUser(userId);
+    const users = await fetchAllUsers();
+    set({ allUsers: users });
+  },
+
+  adminUnban: async (userId) => {
+    await unbanUser(userId);
+    const users = await fetchAllUsers();
+    set({ allUsers: users });
+  },
+
+  adminModeratePost: async (postId, status) => {
+    await adminSetPostStatus(postId, status);
+    const posts = await fetchAllPosts();
+    set({ allPosts: posts });
   },
 
   // ═══ Apply Promo Code ═══

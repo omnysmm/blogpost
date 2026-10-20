@@ -1,53 +1,51 @@
-# Register BlogPost local server to start after reboot (logon + startup)
-# Run once: powershell -ExecutionPolicy Bypass -File install-autostart.ps1
+# Install BlogPost autostart + 2-minute watchdog (ASCII-only for PS 5.1)
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$cmd = Join-Path $root "start-server.cmd"
-$taskName = "BlogPost-Local-Server"
+$watchdog = Join-Path $root "watchdog.ps1"
+$logonTask = "BlogPost-Local-Server"
+$watchTask = "BlogPost-Watchdog"
 
-# Clean previous
-foreach ($n in @($taskName, "$taskName-Startup")) {
+foreach ($n in @($logonTask, "$logonTask-Startup", $watchTask)) {
   Unregister-ScheduledTask -TaskName $n -Confirm:$false -ErrorAction SilentlyContinue
 }
 
-# 1) At user logon - primary trigger (no admin required)
-$action = New-ScheduledTaskAction -Execute $cmd -WorkingDirectory $root
-$triggerLogon = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$root\start-server.ps1`"" -WorkingDirectory $root
+$watchAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$watchdog`"" -WorkingDirectory $root
+
 $settings = New-ScheduledTaskSettingsSet `
   -AllowStartIfOnBatteries `
   -DontStopIfGoingOnBatteries `
   -StartWhenAvailable `
-  -RestartCount 3 `
-  -RestartInterval (New-TimeSpan -Minutes 1) `
-  -ExecutionTimeLimit ([TimeSpan]::Zero)
+  -ExecutionTimeLimit (New-TimeSpan -Minutes 2) `
+  -MultipleInstances IgnoreNew
 
 Register-ScheduledTask `
-  -TaskName $taskName `
+  -TaskName $logonTask `
   -Action $action `
-  -Trigger $triggerLogon `
+  -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME) `
   -Settings $settings `
-  -Description "BlogPost Vite server on http://localhost:3000 (persistent after reboot)" `
-  -RunLevel Limited `
+  -Description "BlogPost Vite http://localhost:3000 (detached, at logon)" `
   -Force | Out-Null
 
-Write-Output "Registered logon task: $taskName"
+Register-ScheduledTask `
+  -TaskName $watchTask `
+  -Action $watchAction `
+  -Trigger (New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 2) -RepetitionDuration (New-TimeSpan -Days 3650)) `
+  -Settings $settings `
+  -Description "Restart BlogPost Vite if :3000 is down (every 2 min)" `
+  -Force | Out-Null
 
-# 2) At system startup - best-effort (needs admin)
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if ($isAdmin) {
-  $triggerBoot = New-ScheduledTaskTrigger -AtStartup
   Register-ScheduledTask `
-    -TaskName "$taskName-Startup" `
+    -TaskName "$logonTask-Startup" `
     -Action $action `
-    -Trigger $triggerBoot `
+    -Trigger (New-ScheduledTaskTrigger -AtStartup) `
     -Settings $settings `
-    -Description "BlogPost Vite server at boot (before logon)" `
-    -RunLevel Limited `
+    -Description "BlogPost Vite at boot" `
     -Force | Out-Null
-  Write-Output "Registered startup task: $taskName-Startup"
-} else {
-  Write-Output "Skipped startup task (no admin) - logon task is enough after user sign-in."
+  Write-Output "Registered boot task"
 }
 
-# Start now if not running
-& $cmd
+& (Join-Path $root "start-server.ps1")
+Write-Output "Watchdog task: $watchTask (every 2 min)"

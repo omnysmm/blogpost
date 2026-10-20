@@ -1,4 +1,4 @@
 @echo off
-rem BlogPost persistent server entrypoint (used by Scheduled Task)
+rem BlogPost detached server entrypoint (Scheduled Task / Startup)
 cd /d "%~dp0"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0start-server.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0start-server.ps1"
