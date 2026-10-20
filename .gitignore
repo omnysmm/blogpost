@@ -6,3 +6,5 @@ build/
 .env.local
 .env
 .env.*.local
+supabase/.temp/
+logs/

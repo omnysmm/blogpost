@@ -101,18 +101,40 @@ Max ${maxLength} chars. Ready material only.`);
     { url: '/api/llm/openai', model: 'openai-fast' },
     { url: 'https://text.pollinations.ai/openai', model: 'openai' },
     { url: 'https://text.pollinations.ai/openai', model: 'openai-fast' },
+    { url: 'https://openrouter.ai/api/v1/chat/completions', model: 'google/gemma-2-9b-it:free' },
+    { url: 'https://openrouter.ai/api/v1/chat/completions', model: 'mistralai/mistral-7b-instruct:free' },
+    { url: 'https://openrouter.ai/api/v1/chat/completions', model: 'meta-llama/llama-3-8b-instruct:free' },
   ];
   for (const t of tries) {
     try {
-      const text = await postOpenAI(t.url, {
-        model: t.model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `${prompt}` },
-        ],
-        max_tokens: 1200,
-        temperature: 0.7,
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      };
+      if (t.url.includes('openrouter.ai')) {
+        headers['HTTP-Referer'] = 'https://blogpost.app';
+        headers['X-Title'] = 'BlogPost';
+      }
+      const ctrl = new AbortController();
+      const timer = window.setTimeout(() => ctrl.abort(), 60_000);
+      const res = await fetch(t.url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: t.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt },
+          ],
+          max_tokens: 1200,
+          temperature: 0.7,
+        }),
+        signal: ctrl.signal,
       });
+      window.clearTimeout(timer);
+      if (!res.ok) continue;
+      const raw = await res.text();
+      const text = extractLlmText(raw);
       const ok = accept(text);
       if (ok) return ok;
     } catch (e) {
@@ -145,6 +167,10 @@ Max ${maxLength} chars. Ready material only.`);
     }
   }
 
+  // 4) Local template fallback — always works, no network needed
+  const localText = generateLocalTemplate(prompt, language);
+  if (localText) return raw ? localText : ensureSeoEngagement(localText, language);
+
   throw new Error(
     language === 'ru'
       ? 'Не удалось сгенерировать текст по теме. Проверьте соединение и попробуйте ещё раз.'
@@ -167,6 +193,129 @@ export function ensureSeoEngagement(text: string, language: 'ru' | 'en' = 'ru'):
       : '\n\n👇 What do you think? Drop a comment, like this post, and save it for later!';
   }
   return out;
+}
+
+/** Local template-based content generator — works offline, no API needed. */
+function generateLocalTemplate(prompt: string, language: 'ru' | 'en'): string {
+  const topicMatch = prompt.match(/["«]([^"»]+)["»]/);
+  const topic = topicMatch
+    ? topicMatch[1]
+    : prompt.replace(/^(создай пост|напиши статью|write a post|write an article).*?[:.]?\s*/i, '').slice(0, 100).trim() || 'interesting topic';
+
+  const isArticle = /стать|article/i.test(prompt);
+  const isVideo = /сценар|видео|video|script/i.test(prompt);
+  const isMusic = /песн|музык|song|lyrics|music/i.test(prompt);
+
+  if (language === 'ru') {
+    if (isArticle) {
+      return `# ${topic}: полное руководство
+
+${topic} — тема, которая волнует многих. Разберём всё подробно.
+
+## Что такое ${topic}?
+
+${topic} представляет собой важную область, которая заслуживает внимания каждого.
+
+## Почему это важно?
+
+Понимание ${topic} помогает принимать обоснованные решения и достигать лучших результатов.
+
+## Практические советы
+
+1. **Начните с основ** — изучите фундаментальные принципы.
+2. **Применяйте на практике** — теория без практики бесполезна.
+3. **Делитесь опытом** — обсуждайте с единомышленниками.
+
+## Заключение
+
+${topic} — это реальный инструмент для роста. Начните использовать эти знания уже сегодня!
+
+#BlogPost`;
+    }
+    if (isVideo) {
+      return `🎬 Видеоролик: ${topic}
+
+00:00 — Вступление
+«Привет! Сегодня поговорим о ${topic}»
+
+00:15 — Основная часть
+Рассказ о ключевых аспектах. Визуальные примеры, инфографика.
+
+01:30 — Практические советы
+3 главных лайфхака по теме.
+
+02:30 — Заключение
+«Подписывайтесь и ставьте лайк! Расскажите о своём опыте в комментариях»
+
+#BlogPost`;
+    }
+    if (isMusic) {
+      return `🎵 Песня: ${topic}
+
+Куплет 1:
+Тема ${topic} вдохновляет,
+Каждый день что-то меняет,
+Мы идём вперёд с мечтой,
+Верь в себя и будь собой.
+
+Припев:
+${topic} — это наш путь,
+Будем вместе как-нибудь!
+Лайк поставь и подписывайся!
+
+Бридж:
+Мир полон возможностей,
+${topic} — ключ к чудесностям.
+
+#BlogPost`;
+    }
+    return `✨ ${topic} — то, что нужно знать каждому!
+
+🔹 ${topic} открывает новые возможности для тех, кто готов действовать.
+🔹 Эксперты рекомендуют уделять внимание ${topic} уже сегодня.
+🔹 А вы уже пробовали применить на практике?
+
+Расскажите в комментариях о своём опыте! 👇
+
+#BlogPost`;
+  }
+
+  // English
+  if (isArticle) {
+    return `# ${topic}: A Complete Guide
+
+${topic} is a subject that deserves your full attention.
+
+## What is ${topic}?
+
+Understanding ${topic} can open new doors and help you make better decisions.
+
+## Why It Matters
+
+People who grasp ${topic} achieve significantly better results.
+
+## Practical Tips
+
+1. **Start with the basics** — learn the fundamentals.
+2. **Practice daily** — theory without action is useless.
+3. **Share your experience** — discuss with like-minded people.
+
+## Conclusion
+
+${topic} is a real tool for growth. Start today!
+
+#BlogPost`;
+  }
+
+  return `✨ ${topic} — what everyone should know!
+
+🔹 ${topic} opens new opportunities for those ready to act.
+🔹 Experts recommend paying attention to ${topic} today.
+🔹 Have you tried applying ${topic} in practice?
+
+Share your experience in the comments! 👇
+
+#BlogPost`;
 }
 
 async function postOpenAI(endpoint: string, body: Record<string, unknown>): Promise<string> {
@@ -200,6 +349,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<stri
   const candidates = [
     `/api/image?prompt=${encodeURIComponent(fullPrompt)}`,
     `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=${width}&height=${height}&nologo=true&seed=${seed}`,
+    `https://picsum.photos/${width}/${height}?random=${seed}`,
   ];
 
   for (const url of candidates) {

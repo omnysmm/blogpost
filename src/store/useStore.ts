@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { generateText, generateImage, generateAudio, checkGenerationLimit } from '../services/ai';
-import { fetchPosts, createPost, updatePost as crudUpdatePost, deletePost as crudDeletePost, fetchAnalytics as crudFetchAnalytics, insertAnalytics, fetchPlatformStats, fetchAllUsers, validatePromoCode, exportToCSV } from '../services/crud';
+import { fetchPosts, createPost, updatePost as crudUpdatePost, deletePost as crudDeletePost, fetchAnalytics as crudFetchAnalytics, upsertAnalytics, fetchPlatformStats, fetchAllUsers, validatePromoCode, exportToCSV, fetchAutoTasks as crudFetchAutoTasks, upsertAutoTask as crudUpsertAutoTask, deleteAutoTask as crudDeleteAutoTask } from '../services/crud';
 import {
   loadPosts as loadLocalPosts,
   savePosts as saveLocalPosts,
@@ -56,7 +56,7 @@ interface AppState {
   restoreFromArchive: (id: string) => void;
   processDuePosts: () => Promise<number>;
   autoTasks: AutoTask[];
-  loadAutoTasks: () => void;
+  loadAutoTasks: () => Promise<void>;
   saveAutoTasks: (tasks: AutoTask[]) => void;
   upsertAutoTask: (task: AutoTask) => void;
   removeAutoTask: (id: string) => void;
@@ -367,9 +367,9 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  // ═══ Load all user data (posts + analytics) ═══
+  // ═══ Load all user data (posts + analytics + autoTasks) ═══
   loadUserData: async () => {
-    await Promise.all([get().loadPosts(), get().loadAnalytics()]);
+    await Promise.all([get().loadPosts(), get().loadAnalytics(), get().loadAutoTasks()]);
   },
 
   // ═══ Load Posts (localStorage first, then Supabase) ═══
@@ -416,16 +416,17 @@ export const useStore = create<AppState>((set, get) => ({
     set({ posts, dataLoadedFor: user.id });
   },
 
-  // ═══ Load Analytics (localStorage first, then Supabase) ═══
-  loadAnalytics: async (_days = 30) => {
+  // ═══ Load Analytics (Supabase as primary, localStorage as cache) ═══
+  loadAnalytics: async (_days?: number) => {
     const user = get().currentUser;
     if (!user) return;
 
-    let analytics = loadLocalAnalytics(user.id);
+    const local = loadLocalAnalytics(user.id);
+    let analytics = local;
 
     if (isSupabaseConfigured) {
       try {
-        const remote = await crudFetchAnalytics(user.id, _days);
+        const remote = await crudFetchAnalytics(user.id);
         if (remote && remote.length > 0) {
           const remoteRows = (remote as any[]).map((r: any) => ({
             date: r.date,
@@ -435,33 +436,68 @@ export const useStore = create<AppState>((set, get) => ({
             shares: r.shares || 0,
             publications: r.publications || 0,
           })) as Analytics[];
-          // Merge by date+network: take max values so local publications aren't lost
+          // Merge: Supabase is primary, keep local-only rows
           const map = new Map<string, Analytics>();
-          for (const row of [...remoteRows, ...analytics]) {
+          for (const row of remoteRows) {
+            map.set(`${row.date}|${row.network}`, { ...row });
+          }
+          for (const row of local) {
             const key = `${row.date}|${row.network}`;
-            const prev = map.get(key);
-            if (!prev) {
+            const existing = map.get(key);
+            if (!existing) {
               map.set(key, { ...row });
+              // Sync local-only row to Supabase
+              upsertAnalytics({
+                user_id: user.id,
+                date: row.date,
+                network: row.network,
+                views: row.views,
+                likes: row.likes,
+                shares: row.shares,
+                publications: row.publications,
+              }).catch(() => {});
             } else {
               map.set(key, {
                 date: row.date,
                 network: row.network,
-                views: Math.max(prev.views, row.views),
-                likes: Math.max(prev.likes, row.likes),
-                shares: Math.max(prev.shares, row.shares),
-                publications: Math.max(prev.publications, row.publications),
+                views: Math.max(existing.views, row.views),
+                likes: Math.max(existing.likes, row.likes),
+                shares: Math.max(existing.shares, row.shares),
+                publications: Math.max(existing.publications, row.publications),
               });
             }
           }
           analytics = Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
           saveLocalAnalytics(user.id, analytics);
+        } else if (local.length > 0) {
+          // Supabase empty but local has data — sync local to Supabase
+          for (const row of local) {
+            upsertAnalytics({
+              user_id: user.id,
+              date: row.date,
+              network: row.network,
+              views: row.views,
+              likes: row.likes,
+              shares: row.shares,
+              publications: row.publications,
+            }).catch(() => {});
+          }
         }
       } catch (e) {
         console.error('loadAnalytics remote error:', e);
       }
     }
 
-    set({ analytics, dataLoadedFor: user.id });
+    // Apply period filter for display (all data stays loaded)
+    if (_days) {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - _days);
+      const cutoffStr = cutoff.toISOString().split('T')[0];
+      const filtered = analytics.filter(a => a.date >= cutoffStr);
+      set({ analytics: filtered.length > 0 ? filtered : analytics, dataLoadedFor: user.id });
+    } else {
+      set({ analytics, dataLoadedFor: user.id });
+    }
   },
 
   // ═══ Record publication to analytics (persistent) ═══
@@ -473,15 +509,17 @@ export const useStore = create<AppState>((set, get) => ({
 
     if (isSupabaseConfigured) {
       try {
-        await insertAnalytics({
+        const date = new Date().toISOString().split('T')[0];
+        const existing = next.find(a => a.date === date && a.network === network);
+        await upsertAnalytics({
           user_id: user.id,
           post_id: postId || null,
           network,
-          date: new Date().toISOString().split('T')[0],
-          views: 0,
-          likes: 0,
-          shares: 0,
-          publications: 1,
+          date,
+          views: existing?.views || 0,
+          likes: existing?.likes || 0,
+          shares: existing?.shares || 0,
+          publications: existing?.publications || 1,
         });
       } catch (e) {
         console.error('recordPublication supabase error:', e);
@@ -580,15 +618,103 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   // ═══ Auto-generation tasks ═══
-  loadAutoTasks: () => {
+  loadAutoTasks: async () => {
     const user = get().currentUser;
     if (!user) return;
-    set({ autoTasks: loadLocalAutoTasks(user.id) });
+
+    const local = loadLocalAutoTasks(user.id);
+    let tasks = local;
+
+    if (isSupabaseConfigured) {
+      try {
+        const remote = await crudFetchAutoTasks(user.id);
+        if (remote && remote.length > 0) {
+          const remoteTasks = (remote as any[]).map((r: any) => ({
+            id: r.id,
+            name: r.name || '',
+            contentType: r.content_type || 'post',
+            frequency: r.frequency || 'daily',
+            schedule: typeof r.schedule === 'object' ? r.schedule : { time: '10:00', days: [] },
+            scheduledDates: r.scheduled_dates || [],
+            networks: r.networks || [],
+            topics: r.topics || [],
+            active: r.active ?? true,
+            lastRun: r.last_run,
+            generatedCount: r.generated_count || 0,
+          })) as AutoTask[];
+          // Merge: prefer remote, keep local-only tasks
+          const remoteIds = new Set(remoteTasks.map(t => t.id));
+          const localOnly = local.filter(t => !remoteIds.has(t.id));
+          tasks = [...remoteTasks, ...localOnly];
+          // Sync local-only to Supabase
+          for (const task of localOnly) {
+            crudUpsertAutoTask({
+              id: task.id,
+              user_id: user.id,
+              name: task.name,
+              content_type: task.contentType,
+              frequency: task.frequency,
+              schedule: task.schedule,
+              scheduled_dates: task.scheduledDates || [],
+              networks: task.networks || [],
+              topics: task.topics || [],
+              active: task.active,
+              last_run: task.lastRun || null,
+              generated_count: task.generatedCount || 0,
+            }).catch(() => {});
+          }
+          saveLocalAutoTasks(user.id, tasks);
+        } else if (local.length > 0) {
+          // Supabase empty, sync local
+          for (const task of local) {
+            crudUpsertAutoTask({
+              id: task.id,
+              user_id: user.id,
+              name: task.name,
+              content_type: task.contentType,
+              frequency: task.frequency,
+              schedule: task.schedule,
+              scheduled_dates: task.scheduledDates || [],
+              networks: task.networks || [],
+              topics: task.topics || [],
+              active: task.active,
+              last_run: task.lastRun || null,
+              generated_count: task.generatedCount || 0,
+            }).catch(() => {});
+          }
+        }
+      } catch (e) {
+        console.error('loadAutoTasks remote error:', e);
+      }
+    }
+
+    set({ autoTasks: tasks });
   },
   saveAutoTasks: (tasks) => {
     const user = get().currentUser;
     set({ autoTasks: tasks });
-    if (user) saveLocalAutoTasks(user.id, tasks);
+    if (user) {
+      saveLocalAutoTasks(user.id, tasks);
+      // Sync each task to Supabase
+      if (isSupabaseConfigured) {
+        for (const task of tasks) {
+          crudUpsertAutoTask({
+            id: task.id,
+            user_id: user.id,
+            name: task.name,
+            content_type: task.contentType,
+            frequency: task.frequency,
+            schedule: task.schedule,
+            scheduled_dates: task.scheduledDates || [],
+            networks: task.networks || [],
+            topics: task.topics || [],
+            active: task.active,
+            last_run: task.lastRun || null,
+            generated_count: task.generatedCount || 0,
+          }).catch(() => {});
+        }
+      }
+    }
   },
   upsertAutoTask: (task) => {
     const list = get().autoTasks;
@@ -598,6 +724,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
   removeAutoTask: (id) => {
     get().saveAutoTasks(get().autoTasks.filter(t => t.id !== id));
+    if (isSupabaseConfigured) crudDeleteAutoTask(id).catch(() => {});
   },
 
   /** Generate + enqueue posts for auto-tasks that are due. */
@@ -605,7 +732,7 @@ export const useStore = create<AppState>((set, get) => ({
     const user = get().currentUser;
     if (!user) return 0;
     const tasks = get().autoTasks;
-    if (!tasks.length) get().loadAutoTasks();
+    if (!tasks.length) await get().loadAutoTasks();
 
     let ran = 0;
     for (const task of get().autoTasks) {

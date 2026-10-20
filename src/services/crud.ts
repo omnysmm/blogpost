@@ -22,7 +22,7 @@ export async function fetchById<T>(table: string, id: string): Promise<T | null>
 
 export async function insert<T>(table: string, row: Partial<T>): Promise<T | null> {
   if (!isSupabaseConfigured) return null;
-  const { data, error } = await supabase.from(table).insert(row).select().single();
+  const { data, error } = await supabase.from(table).insert(row as any).select().single();
   if (error) { console.error(`Insert ${table} error:`, error); return null; }
   return data as T;
 }
@@ -128,22 +128,57 @@ export async function disconnectSocialAccount(userId: string, network: string) {
 
 // ═══ Analytics ═══
 
-export async function fetchAnalytics(userId: string, days: number = 30) {
+export async function fetchAnalytics(userId: string, _days?: number) {
   if (!isSupabaseConfigured) return [];
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
-  const { data, error } = await supabase
+  let query = supabase
     .from('analytics')
     .select('*')
     .eq('user_id', userId)
-    .gte('date', startDate.toISOString().split('T')[0])
     .order('date', { ascending: true });
+  if (_days) {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - _days);
+    query = query.gte('date', startDate.toISOString().split('T')[0]);
+  }
+  const { data, error } = await query;
   if (error) return [];
   return data || [];
 }
 
 export async function insertAnalytics(record: any) {
   return insert('analytics', record);
+}
+
+export async function upsertAnalytics(record: any) {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase
+    .from('analytics')
+    .upsert(record, { onConflict: 'user_id,date,network' })
+    .select()
+    .single();
+  if (error) { console.error('Upsert analytics error:', error); return null; }
+  return data;
+}
+
+// ═══ Auto Tasks ═══
+
+export async function fetchAutoTasks(userId: string) {
+  return fetchAll<any>('auto_tasks', userId);
+}
+
+export async function upsertAutoTask(task: any) {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase
+    .from('auto_tasks')
+    .upsert(task, { onConflict: 'id' })
+    .select()
+    .single();
+  if (error) { console.error('Upsert auto_task error:', error); return null; }
+  return data;
+}
+
+export async function deleteAutoTask(id: string) {
+  return deleteById('auto_tasks', id);
 }
 
 // ═══ User Blocks (constructor) ═══
