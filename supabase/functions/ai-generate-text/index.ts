@@ -1,132 +1,229 @@
 // Supabase Edge Function: ai-generate-text
-// Handles text generation via YandexGPT and GigaChat
+// YandexGPT + GigaChat with auto model selection and optional SSE streaming.
+// API keys stay server-side.
 
-import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
 
-const YANDEX_API_KEY = Deno.env.get('YANDEX_GPT_API_KEY') || ''
-const YANDEX_FOLDER_ID = Deno.env.get('YANDEX_FOLDER_ID') || ''
-const GIGACHAT_API_KEY = Deno.env.get('GIGACHAT_API_KEY') || ''
+function env(name: string): string {
+  return Deno.env.get(name) || '';
+}
 
-serve(async (req) => {
-  // CORS headers
-  if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      },
-    })
-  }
+const YANDEX_API_KEY = env('YANDEX_GPT_API_KEY') || env('YANDEX_API_KEY');
+const YANDEX_FOLDER_ID = env('YANDEX_FOLDER_ID');
+const GIGACHAT_API_KEY = env('GIGACHAT_API_KEY');
 
-  try {
-    const { prompt, systemPrompt, model, maxLength = 2000 } = await req.json()
+type Model = 'yandexgpt' | 'gigachat' | 'auto';
 
-    let text = ''
+function pickModel(requested: Model | undefined, language: string, prompt: string): 'yandexgpt' | 'gigachat' {
+  if (requested === 'yandexgpt' || requested === 'gigachat') return requested;
+  // Auto: RU → YandexGPT, EN → GigaChat; creative long-form prefers GigaChat when available
+  const looksRu = language === 'ru' || /[а-яё]/i.test(prompt);
+  if (looksRu) return 'yandexgpt';
+  return GIGACHAT_API_KEY ? 'gigachat' : 'yandexgpt';
+}
 
-    if (model === 'yandexgpt' && YANDEX_API_KEY && YANDEX_FOLDER_ID) {
-      text = await callYandexGPT(prompt, systemPrompt, maxLength)
-    } else if (model === 'gigachat' && GIGACHAT_API_KEY) {
-      text = await callGigaChat(prompt, systemPrompt, maxLength)
-    } else {
-      // Fallback: enhanced mock
-      text = generateMockResponse(prompt, maxLength)
-    }
-
-    return new Response(JSON.stringify({ text }), {
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    })
-  } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    })
-  }
-})
-
-// ═══ YandexGPT ═══
-async function callYandexGPT(prompt: string, systemPrompt: string, maxLength: number): Promise<string> {
-  const response = await fetch('https://llm.api.cloud.yandex.net/foundationModels/v1/completion', {
+async function callYandexGPT(
+  prompt: string,
+  systemPrompt: string,
+  maxTokens: number,
+  temperature: number,
+  stream: boolean,
+): Promise<string> {
+  const res = await fetch('https://llm.api.cloud.yandex.net/foundationModels/v1/completion', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Api-Key ${YANDEX_API_KEY}`,
+      Authorization: `Api-Key ${YANDEX_API_KEY}`,
       'x-folder-id': YANDEX_FOLDER_ID,
     },
     body: JSON.stringify({
       modelUri: `gpt://${YANDEX_FOLDER_ID}/yandexgpt-lite`,
       completionOptions: {
-        stream: false,
-        temperature: 0.7,
-        maxTokens: Math.min(maxLength, 4000),
+        stream,
+        temperature,
+        maxTokens,
       },
       messages: [
         { role: 'system', text: systemPrompt || 'Ты — профессиональный контент-мейкер.' },
         { role: 'user', text: prompt },
       ],
     }),
-  })
+  });
+  if (!res.ok) throw new Error(`YandexGPT HTTP ${res.status}: ${await res.text()}`);
 
-  if (!response.ok) {
-    const err = await response.text()
-    throw new Error(`YandexGPT error: ${err}`)
+  if (stream) {
+    // Yandex streams NDJSON / SSE-like chunks depending on version
+    const raw = await res.text();
+    return raw
+      .split('\n')
+      .map((line) => line.replace(/^data:\s*/, '').trim())
+      .filter((line) => line && line !== '[DONE]')
+      .map((line) => {
+        try {
+          const j = JSON.parse(line);
+          return j.result?.alternatives?.[0]?.message?.text || j.result?.alternatives?.[0]?.text || '';
+        } catch {
+          return '';
+        }
+      })
+      .join('');
   }
 
-  const data = await response.json()
-  return data.result?.alternatives?.[0]?.message?.text || ''
+  const data = await res.json();
+  return data.result?.alternatives?.[0]?.message?.text || '';
 }
 
-// ═══ GigaChat ═══
-async function callGigaChat(prompt: string, systemPrompt: string, maxLength: number): Promise<string> {
-  const response = await fetch('https://gigachat.devices.sberbank.ru/api/v1/chat/completions', {
+async function callGigaChat(
+  prompt: string,
+  systemPrompt: string,
+  maxTokens: number,
+  temperature: number,
+  stream: boolean,
+): Promise<string> {
+  const res = await fetch('https://gigachat.devices.sberbank.ru/api/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${GIGACHAT_API_KEY}`,
+      Authorization: `Bearer ${GIGACHAT_API_KEY}`,
     },
     body: JSON.stringify({
       model: 'GigaChat',
+      stream,
+      temperature,
+      max_tokens: maxTokens,
       messages: [
         { role: 'system', content: systemPrompt || 'Ты — профессиональный контент-мейкер.' },
         { role: 'user', content: prompt },
       ],
-      temperature: 0.7,
-      max_tokens: Math.min(maxLength, 4000),
     }),
-  })
+  });
+  if (!res.ok) throw new Error(`GigaChat HTTP ${res.status}: ${await res.text()}`);
 
-  if (!response.ok) {
-    const err = await response.text()
-    throw new Error(`GigaChat error: ${err}`)
+  if (stream) {
+    const raw = await res.text();
+    return raw
+      .split('\n')
+      .map((line) => line.replace(/^data:\s*/, '').trim())
+      .filter((line) => line && line !== '[DONE]')
+      .map((line) => {
+        try {
+          const j = JSON.parse(line);
+          return j.choices?.[0]?.delta?.content || '';
+        } catch {
+          return '';
+        }
+      })
+      .join('');
   }
 
-  const data = await response.json()
-  return data.choices?.[0]?.message?.content || ''
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || '';
 }
 
-// ═══ Enhanced Mock ═══
-function generateMockResponse(prompt: string, maxLength: number): string {
-  const topic = prompt.match(/тему[:\s]*["«](.+?)["»]/i)?.[1] || prompt.slice(0, 50)
-
+function mockText(prompt: string): string {
+  const topic = prompt.match(/тему[:\s]*["«](.+?)["»]/i)?.[1] || prompt.slice(0, 60).replace(/\s+/g, ' ');
   return `📝 ${topic}
 
-Сегодня мы поговорим о «${topic}». Это актуальная тема, которая интересует многих.
+Сегодня поговорим о «${topic}». Тема, которая интересует многих.
 
-🔹 Первый важный момент — понимание основ. Каждый начинающий должен знать, с чего начать свой путь.
+🔹 Начните с основ — понимание фундамента экономит месяцы ошибок.
+🔹 Практика важнее теории: применяйте знания сразу.
+🔹 Учитесь постоянно — рынок меняется быстрее учебников.
+🔹 Сообщество ускоряет рост: ищите единомышленников.
 
-🔹 Второй аспект — практика. Теория без практики не даст нужного результата. Применяйте знания на деле.
+💡 «${topic}» — направление, которое заслуживает внимания. Начните сегодня.
 
-🔹 Третий момент — постоянное обучение. Мир меняется, и мы должны меняться вместе с ним.
+👇 Напишите в комментариях, что думаете, поставьте лайк и сохраните пост!
 
-🔹 Четвёртый фактор — сообщество. Окружите себя единомышленниками, которые разделяют ваши цели.
-
-💡 Вывод: «${topic}» — это направление, которое заслуживает вашего внимания. Начните уже сегодня, и результат не заставит себя ждать.
-
-#контент #блог #AI #BlogPost`
+#BlogPost #${topic.replace(/\s+/g, '')}`;
 }
+
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'POST only' }), {
+      status: 405,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  try {
+    const body = await req.json();
+    const prompt = String(body.prompt || body.text || '');
+    const systemPrompt = String(body.systemPrompt || body.system || '');
+    const model = (body.model as Model) || 'auto';
+    const language = String(body.language || 'ru');
+    const maxLength = Number(body.maxLength || 2000);
+    const temperature = Number(body.temperature || 0.7);
+    const maxTokens = Math.min(Math.max(Math.floor(maxLength / 3), 200), 4000);
+    const stream = body.stream === true;
+
+    if (!prompt.trim()) {
+      return new Response(JSON.stringify({ error: 'prompt is required' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const primary = pickModel(model, language, prompt);
+    const order: Array<'yandexgpt' | 'gigachat'> =
+      primary === 'yandexgpt' ? ['yandexgpt', 'gigachat'] : ['gigachat', 'yandexgpt'];
+
+    let text = '';
+    let usedModel = '';
+    let lastErr = '';
+
+    for (const m of order) {
+      try {
+        if (m === 'yandexgpt') {
+          if (!YANDEX_API_KEY || !YANDEX_FOLDER_ID) {
+            lastErr = 'YandexGPT not configured';
+            continue;
+          }
+          text = await callYandexGPT(prompt, systemPrompt, maxTokens, temperature, stream);
+        } else {
+          if (!GIGACHAT_API_KEY) {
+            lastErr = 'GigaChat not configured';
+            continue;
+          }
+          text = await callGigaChat(prompt, systemPrompt, maxTokens, temperature, stream);
+        }
+        if (text.trim().length > 0) {
+          usedModel = m;
+          break;
+        }
+        lastErr = `${m} returned empty text`;
+      } catch (e) {
+        lastErr = String(e?.message || e);
+        console.warn(`model ${m} failed:`, lastErr);
+      }
+    }
+
+    if (!text.trim()) {
+      text = mockText(prompt);
+      usedModel = 'mock';
+    }
+
+    return new Response(
+      JSON.stringify({
+        text,
+        model: usedModel,
+        mock: usedModel === 'mock',
+        warning: usedModel === 'mock' ? lastErr : undefined,
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  } catch (error) {
+    return new Response(JSON.stringify({ error: String(error?.message || error) }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+});
+

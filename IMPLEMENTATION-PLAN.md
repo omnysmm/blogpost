@@ -221,20 +221,27 @@ CREATE TABLE analytics (
 ### 3.2 Авторизация через Supabase Auth
 
 **Задачи:**
-- [ ] Заменить localStorage-авторизацию на `supabase.auth.signUp/signIn/signOut`
-- [ ] Добавить OAuth (Google, VK) через Supabase
-- [ ] Добавить сброс пароля
-- [ ] Верификация email
-- [ ] Обновить `useStore.ts` — синхронизация с Supabase session
+- [x] Заменить localStorage-авторизацию на `supabase.auth.signUp/signIn/signOut`
+- [x] OAuth **только** ВК, Яндекс, ОК (Google — не нужен). Кастомный flow через Edge Function `supabase/functions/social-auth`
+- [x] Добавить сброс пароля
+- [x] Верификация email (опционально — включить Confirm email в Supabase Auth settings)
+- [x] Обновить `useStore.ts` — синхронизация с Supabase session (`onAuthStateChange` + `getSessionUser`)
+
+**Переменные окружения (Edge Function secrets):**
+```
+VK_CLIENT_ID, VK_CLIENT_SECRET          # https://vk.com/dev
+YANDEX_CLIENT_ID, YANDEX_CLIENT_SECRET  # https://oauth.yandex.ru
+OK_CLIENT_ID, OK_CLIENT_SECRET, OK_PUBLIC_KEY, OK_SECRET_KEY  # https://apiok.ru/dev
+```
+Redirect URI для каждого провайдера: `https://<project>.supabase.co/functions/v1/social-auth?provider=<vk|yandex|ok>`
 
 ### 3.3 Миграция состояния на Supabase
 
 **Задачи:**
-- [ ] Заменить все `localStorage` вызовы на Supabase queries
-- [ ] CRUD для постов (`posts` table)
-- [ ] CRUD для кампаний (`ad_campaigns` table)
-- [ ] CRUD для тикетов (`tickets` + `ticket_messages`)
-- [ ] Realtime подписки для чата поддержки
+- [x] CRUD для постов (`posts` table) — dual-write localStorage + Supabase
+- [x] CRUD-обёртки для кампаний / тикетов / платежей / social_accounts (`src/services/crud.ts`)
+- [x] Realtime подписки для чата поддержки (`src/services/support.ts` — tickets + ticket_messages)
+- [ ] Полный отказ от localStorage как primary store (оставить offline-fallback)
 
 ---
 
@@ -266,23 +273,23 @@ interface AIService {
 ```
 
 **Задачи:**
-- [ ] Создать `src/services/ai.ts` — единый AI-сервис
-- [ ] Создать Supabase Edge Functions для AI-вызовов (защита API-ключей)
-- [ ] Реализовать генерацию текста (YandexGPT + GigaChat)
-- [ ] Реализовать генерацию изображений (Kandinsky)
-- [ ] Реализовать озвучку (Silero TTS)
-- [ ] Добавить автоматический выбор модели
-- [ ] Добавить стриминг ответов (для UX)
+- [x] Создать `src/services/ai.ts` — единый AI-сервис
+- [x] Создать Supabase Edge Functions для AI-вызовов (защита API-ключей)
+- [x] Реализовать генерацию текста (YandexGPT + GigaChat) + авто-fallback между моделями
+- [x] Реализовать генерацию изображений (Kandinsky / FusionBrain)
+- [x] Реализовать озвучку (Silero TTS + browser SpeechSynthesis fallback)
+- [x] Добавить автоматический выбор модели (`autoSelectModel`: RU→YandexGPT, EN→GigaChat)
+- [x] Добавить стриминг ответов (`generateTextStream` — progressive UI)
 
 ### 4.3 Обновление ContentGeneratorPage
 
 **Задачи:**
-- [ ] Подключить реальный AI-сервис
-- [ ] Добавить прогресс-бар генерации
-- [ ] Превью сгенерированного контента
-- [ ] Редактирование перед публикацией
-- [ ] Сохранение черновиков в Supabase
-- [ ] Лимиты генерации по тарифам
+- [x] Подключить реальный AI-сервис (Edge Functions first, fallback chain)
+- [x] Добавить прогресс-бар генерации
+- [x] Превью сгенерированного контента (уже есть)
+- [x] Редактирование перед публикацией (RichTextEditor)
+- [x] Сохранение черновиков в Supabase (`addPost` dual-write)
+- [x] Лимиты генерации по тарифам (`checkGenerationLimit` — Supabase count за месяц)
 
 ---
 
@@ -303,13 +310,13 @@ interface AIService {
 ### 5.2 Реализация
 
 **Задачи:**
-- [ ] OAuth-подключение для каждой соцсети
-- [ ] Хранение токенов в `social_accounts` (зашифрованные)
-- [ ] Публикация постов через API каждой соцсети
-- [ ] Загрузка медиа (фото, видео, аудио)
-- [ ] Планировщик публикаций (cron через Supabase Edge Functions)
-- [ ] Статус публикации (успех/ошибка)
-- [ ] Автоматическая адаптация контента под каждую сеть
+- [x] OAuth-подключение: VK, OK (Edge Function `social-oauth`). Telegram — Bot token. YouTube/Instagram/TikTok/Rutube — TODO
+- [x] Хранение токенов в `social_accounts` (service-role write из Edge Function)
+- [x] Публикация: Telegram (готов), VK + OK (`social-publish`)
+- [x] Загрузка медиа (фото → VK wall upload; Telegram photo)
+- [x] Планировщик публикаций (`schedule-publish` + client `processDuePosts`)
+- [x] Статус публикации (успех/ошибка в PublishResult)
+- [x] Автоматическая адаптация контента под каждую сеть (лимиты длины в `social-publish`)
 
 ### 5.3 Обновление SettingsPage
 
@@ -326,25 +333,25 @@ interface AIService {
 ### 6.1 ЮKassa (Яндекс.Оплата)
 
 **Задачи:**
-- [ ] Зарегистрировать магазин в ЮKassa
-- [ ] Создать Supabase Edge Function для создания платежа
-- [ ] Обработка webhook'ов (payment.succeeded, payment.canceled)
-- [ ] Обновление подписки пользователя
-- [ ] Возврат средств
+- [x] Edge Function `create-payment` (YooKassa API + запись в `payments`)
+- [x] Webhook `yookassa-webhook` (payment.succeeded/canceled/refund) → активация подписки
+- [x] Обновление подписки пользователя (`profiles.subscription`)
+- [x] Возврат средств (`refund-payment`)
+- [ ] Зарегистрировать магазин в ЮKassa (бизнес-шаг) + указать webhook URL
 
 ### 6.2 Подписки
 
 **Задачи:**
-- [ ] Хранение подписок в таблице `profiles`
-- [ ] Автоматическое отключение при истечении
-- [ ] Напоминания за 3 дня до окончания
-- [ ] Апгрейд/даунгрейд тарифа
-- [ ] Промокоды
+- [x] Хранение подписок в таблице `profiles`
+- [x] Напоминания за 3 дня (`isSubscriptionExpiringSoon`)
+- [ ] Автоматическое отключение при истечении (cron)
+- [ ] Апгрейд/даунгрейд тарифа (UI есть, полный flow — частично)
+- [x] Промокоды (`promo_codes` + `use_promo_code`)
 
 ### 6.3 Рекламная платформа
 
 **Задачи:**
-- [ ] CRUD рекламных кампаний в Supabase
+- [x] CRUD рекламных кампаний в Supabase (`crud.ts`)
 - [ ] Показ рекламы на сайте (hero, sidebar, inline, footer)
 - [ ] Трекинг показов и кликов
 - [ ] Автомодерация рекламы
@@ -357,29 +364,29 @@ interface AIService {
 ### 7.1 Сбор аналитики
 
 **Задачи:**
-- [ ] Трекинг просмотров постов
-- [ ] Трекинг лайков и репостов
-- [ ] Агрегация по соцсетям
-- [ ] Ежедневные снимки в таблицу `analytics`
-- [ ] Экспорт в CSV/PDF
+- [x] Трекинг просмотров постов (`recordAnalytics`)
+- [x] Трекинг лайков и репостов
+- [x] Агрегация по соцсетям
+- [x] Ежедневные снимки (local + Supabase `analytics`)
+- [x] Экспорт в CSV (`downloadCSV`)
 
 ### 7.2 Дашборд аналитики
 
 **Задачи:**
-- [ ] Заменить моковые данные на реальные из Supabase
-- [ ] Графики динамики (Recharts)
-- [ ] Фильтры по дате, соцсети, типу контента
+- [x] Реальные данные (local + Supabase), без фейковых моков
+- [x] Графики динамики (Recharts)
+- [ ] Фильтры по дате, соцсети, типу контента (частично)
 - [ ] Сравнение периодов
 - [ ] AI-рекомендации по оптимизации
 
 ### 7.3 Админ-панель
 
 **Задачи:**
-- [ ] Реальные данные пользователей из Supabase
-- [ ] Модерация контента
-- [ ] Бан/разбан пользователей
-- [ ] Настройки сайта
-- [ ] Статистика платформы
+- [x] Реальные данные пользователей из Supabase (`fetchAllUsers`)
+- [x] Модерация контента (approve/reject посты)
+- [x] Бан пользователей (`banUser`)
+- [ ] Настройки сайта (UI есть, сохранение — TODO)
+- [x] Статистика платформы (`fetchPlatformStats`)
 
 ---
 
@@ -398,23 +405,23 @@ interface AIService {
 
 ### 8.2 Мониторинг
 
-- [ ] Sentry — отслеживание ошибок
-- [ ] Supabase Dashboard — метрики БД
+- [x] Sentry — отслеживание ошибок (`src/lib/errors.ts`, `VITE_SENTRY_DSN`)
+- [ ] Supabase Dashboard — метрики БД (включается в дашборде)
 - [ ] Vercel Analytics — Web Vitals
-- [ ] UptimeRobot — мониторинг доступности
+- [ ] UptimeRobot — мониторинг доступности (внешний сервис)
 
 ### 8.3 CI/CD
 
-- [ ] GitHub Actions — автодеплой при push в main
-- [ ] Превью-деплои для PR
-- [ ] Автоматические тесты
+- [x] GitHub Actions — typecheck + unit tests + build + автодеплой (Vercel)
+- [x] Превью-деплои для PR (vercel-action, comment)
+- [x] Автоматические тесты (Vitest, 12 tests)
 
 ---
 
 ## 9. ТЕСТИРОВАНИЕ
 
 ### 9.1 Юнит-тесты
-- [ ] Vitest — тесты для store, AI-сервиса, утилит
+- [x] Vitest — тесты для store/utils/AI/планировщика/платежей (`src/__tests__/core.test.ts`)
 - [ ] React Testing Library — тесты компонентов
 
 ### 9.2 E2E тесты

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
-import { Check, Star, Zap, Crown, CreditCard, ArrowRight, X, Sparkles } from 'lucide-react';
+import { Check, Star, Zap, Crown, CreditCard, ArrowRight, X, Sparkles, Loader2 } from 'lucide-react';
+import { createPayment, createBlockPayment } from '../services/payment';
 
 export default function SubscriptionsPage() {
   const { language, currency, currentUser, setCurrentPage } = useStore();
@@ -10,9 +11,54 @@ export default function SubscriptionsPage() {
   const [hoveredPlan, setHoveredPlan] = useState<number | null>(null);
   const [selectedBlocks, setSelectedBlocks] = useState<string[]>([]);
   const [showPayModal, setShowPayModal] = useState(false);
+  const [payMode, setPayMode] = useState<'plan' | 'blocks'>('plan');
+  const [selectedPlanId, setSelectedPlanId] = useState<string>('basic');
+  const [paying, setPaying] = useState(false);
+  const [payError, setPayError] = useState('');
   const [promoCode, setPromoCode] = useState('');
   const [promoResult, setPromoResult] = useState<{ valid: boolean; discount: number; type: string } | null>(null);
   const [promoError, setPromoError] = useState('');
+
+  const openPay = (mode: 'plan' | 'blocks', planId?: string) => {
+    if (!currentUser) {
+      setCurrentPage('auth');
+      return;
+    }
+    setPayMode(mode);
+    if (planId) setSelectedPlanId(planId);
+    setPayError('');
+    setShowPayModal(true);
+  };
+
+  const handlePay = async () => {
+    if (!currentUser) return;
+    setPaying(true);
+    setPayError('');
+    try {
+      const result =
+        payMode === 'plan'
+          ? await createPayment(currentUser.id, selectedPlanId)
+          : await createBlockPayment(currentUser.id, selectedBlocks);
+      if (result?.confirmationUrl && result.confirmationUrl !== '#') {
+        window.location.href = result.confirmationUrl;
+        return;
+      }
+      if (result?.confirmationUrl === '#') {
+        // Dev mode without Supabase
+        setShowPayModal(false);
+        return;
+      }
+      setPayError(
+        language === 'ru'
+          ? 'Не удалось создать платёж. Проверьте настройки оплаты.'
+          : 'Failed to create payment. Check payment settings.'
+      );
+    } catch {
+      setPayError(language === 'ru' ? 'Ошибка оплаты. Попробуйте позже.' : 'Payment error. Try again later.');
+    } finally {
+      setPaying(false);
+    }
+  };
 
   const handleApplyPromo = async () => {
     if (!promoCode) return;
@@ -139,7 +185,7 @@ export default function SubscriptionsPage() {
                 {plan.price === 0 && <span className="text-slate-500 text-sm"> / {plan.period}</span>}
               </div>
               <button
-                onClick={() => currentUser ? setShowPayModal(true) : setCurrentPage('auth')}
+                onClick={() => openPay('plan', plan.id)}
                 className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${
                   currentUser?.subscription === plan.id
                     ? 'bg-slate-100 text-slate-500 cursor-default'
@@ -207,7 +253,7 @@ export default function SubscriptionsPage() {
             </span>
             <span className="text-lg font-bold text-blue-700">{formatPrice(blocksTotal)}<span className="text-xs font-normal">/{language === 'ru' ? 'мес' : 'mo'}</span></span>
             <button
-              onClick={() => currentUser ? setShowPayModal(true) : setCurrentPage('auth')}
+              onClick={() => openPay('blocks')}
               className="px-5 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition"
             >
               {language === 'ru' ? 'Оплатить' : 'Pay'}
@@ -268,13 +314,32 @@ export default function SubscriptionsPage() {
                 <CreditCard size={32} className="text-green-600" />
               </div>
               <h3 className="text-xl font-bold text-slate-900 mb-2">{language === 'ru' ? 'Оплата через Яндекс.Оплата' : 'Payment via Yandex.Pay'}</h3>
-              <p className="text-slate-600 text-sm mb-4">{language === 'ru' ? 'Подтвердите оплату' : 'Confirm payment'}</p>
+              <p className="text-slate-600 text-sm mb-4">
+                {payMode === 'plan'
+                  ? (language === 'ru' ? 'Оплата тарифа' : 'Plan payment')
+                  : (language === 'ru' ? 'Оплата блоков конструктора' : 'Constructor blocks payment')}
+              </p>
+              {payError && (
+                <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                  {payError}
+                </div>
+              )}
               <div className="space-y-2 mb-4">
-                <button className="w-full p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-sm font-medium hover:bg-yellow-100 transition flex items-center gap-3">
-                  <span className="w-8 h-8 bg-yellow-400 rounded-lg flex items-center justify-center text-white font-bold">Я</span>
+                <button
+                  onClick={handlePay}
+                  disabled={paying}
+                  className="w-full p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-sm font-medium hover:bg-yellow-100 transition flex items-center justify-center gap-3 disabled:opacity-60"
+                >
+                  {paying ? <Loader2 size={16} className="animate-spin" /> : (
+                    <span className="w-8 h-8 bg-yellow-400 rounded-lg flex items-center justify-center text-white font-bold">Я</span>
+                  )}
                   {language === 'ru' ? 'Оплатить через Яндекс.Оплата' : 'Pay via Yandex.Pay'}
                 </button>
-                <button className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-100 transition flex items-center gap-3">
+                <button
+                  onClick={handlePay}
+                  disabled={paying}
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-100 transition flex items-center justify-center gap-3 disabled:opacity-60"
+                >
                   <span className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center"><CreditCard size={16} className="text-purple-600" /></span>
                   {language === 'ru' ? 'Банковской картой' : 'By bank card'}
                 </button>

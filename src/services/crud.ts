@@ -29,7 +29,7 @@ export async function insert<T>(table: string, row: Partial<T>): Promise<T | nul
 
 export async function updateById<T>(table: string, id: string, updates: Partial<T>): Promise<T | null> {
   if (!isSupabaseConfigured) return null;
-  const { data, error } = await supabase.from(table).update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+  const { data, error } = await supabase.from(table).update({ ...updates, updated_at: new Date().toISOString() } as any).eq('id', id).select().single();
   if (error) { console.error(`Update ${table} error:`, error); return null; }
   return data as T;
 }

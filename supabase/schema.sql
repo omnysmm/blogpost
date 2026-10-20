@@ -230,3 +230,10 @@ CREATE POLICY "analytics_insert_own" ON analytics FOR INSERT WITH CHECK (auth.ui
 
 -- User blocks: own
 CREATE POLICY "blocks_all_own" ON user_blocks FOR ALL USING (auth.uid() = user_id);
+
+-- ═══════════════════════════════════════════
+-- Realtime (support chat / tickets)
+-- Run in SQL editor after enabling Realtime for the project
+-- ═══════════════════════════════════════════
+ALTER PUBLICATION supabase_realtime ADD TABLE tickets;
+ALTER PUBLICATION supabase_realtime ADD TABLE ticket_messages;

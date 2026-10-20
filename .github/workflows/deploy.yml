@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, automated-platform-for-bloggers-91452]
   pull_request:
-    branches: [main]
+    branches: [main, automated-platform-for-bloggers-91452]
 
 jobs:
   build-and-deploy:
@@ -19,6 +19,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
 
       - name: Build
         run: npm run build
@@ -39,8 +45,19 @@ jobs:
             echo "Vercel secrets missing — skip deploy (build is still green)."
           fi
 
-      - name: Deploy to Vercel
-        if: steps.vercel.outputs.ready == 'true'
+      # PR preview: deploy preview URL (non-prod)
+      - name: Vercel preview (PR)
+        if: github.event_name == 'pull_request' && steps.vercel.outputs.ready == 'true'
+        continue-on-error: true
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          github-comment: true
+
+      - name: Deploy to Vercel (production)
+        if: github.event_name == 'push' && steps.vercel.outputs.ready == 'true'
         continue-on-error: true
         uses: amondnet/vercel-action@v25
         with:

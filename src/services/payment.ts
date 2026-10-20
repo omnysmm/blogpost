@@ -26,14 +26,13 @@ export const BLOCKS: Record<string, { name: string; price: number }> = {
 };
 
 // ═══ Create Payment ═══
-export async function createPayment(userId: string, planId: string): Promise<{ confirmationUrl: string } | null> {
+export async function createPayment(userId: string, planId: string): Promise<{ confirmationUrl: string; paymentId?: string } | null> {
   const plan = PLANS[planId];
   if (!plan) return null;
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
   if (!supabaseUrl) {
-    // Mock: return a confirmation URL
     console.warn('Supabase not configured. Mock payment created.');
     return { confirmationUrl: '#' };
   }
@@ -50,11 +49,16 @@ export async function createPayment(userId: string, planId: string): Promise<{ c
         amount: { value: plan.price.toFixed(2), currency: plan.currency },
         description: `Подписка BlogPost — ${plan.name}`,
         metadata: { planId, userId },
+        returnUrl: `${window.location.origin}/#/subscriptions?payment=success&plan=${planId}`,
       }),
     });
 
     const data = await response.json();
-    return { confirmationUrl: data.confirmation_url };
+    if (!response.ok || data.error) {
+      console.error('create-payment failed:', data.error);
+      return null;
+    }
+    return { confirmationUrl: data.confirmation_url, paymentId: data.id };
   } catch (error) {
     console.error('Payment creation failed:', error);
     return null;
@@ -119,6 +123,24 @@ export async function checkSubscription(userId: string): Promise<{ plan: string;
   } catch {
     return { plan: 'free', expiresAt: null };
   }
+}
+
+// ═══ Subscription helpers ═══
+export async function refreshSubscription(userId: string): Promise<{ plan: string; expiresAt: string | null }> {
+  return checkSubscription(userId);
+}
+
+/** Days left on trial/paid plan. */
+export function subscriptionDaysLeft(expiresAt: string | null): number | null {
+  if (!expiresAt) return null;
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  return Math.max(0, Math.ceil(ms / 86_400_000));
+}
+
+/** True when trial/subscription expires within `days`. */
+export function isSubscriptionExpiringSoon(expiresAt: string | null, days = 3): boolean {
+  const left = subscriptionDaysLeft(expiresAt);
+  return left !== null && left <= days;
 }
 
 // ═══ Request Refund ═══

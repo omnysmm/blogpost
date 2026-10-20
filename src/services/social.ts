@@ -39,8 +39,7 @@ export const NETWORK_CONFIG: Record<SocialNetwork, { name: string; color: string
 };
 
 // ═══ OAuth Connection ═══
-export function initiateOAuth(network: SocialNetwork): void {
-  const config = NETWORK_CONFIG[network];
+export function initiateOAuth(network: SocialNetwork, userId?: string): void {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
   if (!supabaseUrl) {
@@ -48,8 +47,17 @@ export function initiateOAuth(network: SocialNetwork): void {
     return;
   }
 
-  const redirectUrl = `${supabaseUrl}/functions/v1/social-oauth?network=${network}&redirect=${encodeURIComponent(window.location.origin)}`;
-  window.location.href = redirectUrl;
+  if (network === 'telegram') {
+    console.warn('Telegram connects via Bot token in Settings → Соцсети');
+    return;
+  }
+
+  const params = new URLSearchParams({
+    network,
+    redirect: window.location.origin + '/#/settings',
+  });
+  if (userId) params.set('user_id', userId);
+  window.location.href = `${supabaseUrl}/functions/v1/social-oauth?${params}`;
 }
 
 // ═══ Get Connected Accounts ═══
@@ -60,12 +68,13 @@ export async function getConnectedAccounts(_userId: string): Promise<SocialAccou
     const list = JSON.parse(raw) as Array<{
       network: string;
       name?: string;
+      login?: string;
       connected?: boolean;
       connectedAt?: string;
     }>;
     return list.map(s => ({
       network: s.network as SocialNetwork,
-      accountName: s.name || s.network,
+      accountName: s.login || s.name || s.network,
       connected: !!s.connected,
       connectedAt: s.connectedAt,
     }));

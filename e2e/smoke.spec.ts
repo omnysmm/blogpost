@@ -4,10 +4,11 @@ async function seedSession(page: Page) {
   await page.addInitScript(() => {
     const user = {
       id: 'admin-1',
-      name: 'Admin',
+      name: 'Администратор',
       email: 'admin@admin.ru',
       role: 'admin',
       subscription: 'premium',
+      registeredAt: new Date().toISOString(),
     };
     localStorage.setItem('blogpost_session_user', JSON.stringify(user));
     localStorage.setItem('blogpost_page', 'dashboard');
@@ -71,7 +72,7 @@ test.describe('App shell (authorized)', () => {
   });
 
   test('generator page opens with topic/prompt blocks', async ({ page }) => {
-    await page.addInitScript(() => localStorage.setItem('blogpost_page', 'generator'));
+    await page.addInitScript(() => localStorage.setItem('blogpost_page', 'content-generator'));
     await page.goto('/');
     await expect(page.locator('body')).toContainText(/тема|промпт|генерац/i);
   });
