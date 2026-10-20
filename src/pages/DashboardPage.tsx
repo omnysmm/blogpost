@@ -3,6 +3,7 @@ import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
 import { FileText, Video, Music, Image, Eye, Heart, Share2, Clock, TrendingUp, Megaphone, BarChart3, Zap, MessageSquare, ArrowUp, Users, Target, Award, Calendar, Lightbulb, Sparkles, CheckCircle2, Send } from 'lucide-react';
 import SocialIcon from '../components/SocialIcon';
+import AdSlot from '../components/AdSlot';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar, Legend, LineChart, Line,
@@ -100,6 +101,11 @@ export default function DashboardPage() {
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-slate-900">{t.welcome}, {currentUser?.name}!</h1>
         <p className="text-slate-600 mt-1">{language === 'ru' ? 'Ваша панель управления и аналитика' : 'Your dashboard and analytics'}</p>
+      </div>
+
+      {/* Sponsored */}
+      <div className="mb-6">
+        <AdSlot position="sidebar" />
       </div>
 
       {/* Free Trial Banner */}

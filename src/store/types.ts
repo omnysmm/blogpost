@@ -69,7 +69,7 @@ export interface AdBlock {
   id: string;
   title: string;
   position: string;
-  type: 'views' | 'clicks' | 'banner';
+  type: 'views' | 'clicks' | 'banner' | 'cpm' | 'cpc' | 'cpd';
   pricePerDay: number;
   imageUrl?: string;
   link: string;

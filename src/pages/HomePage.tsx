@@ -9,6 +9,7 @@ import {
   Play, Eye, Heart, Repeat2, Smartphone, Monitor, Tablet, MessageSquare, Upload
 } from 'lucide-react';
 import SocialIcon from '../components/SocialIcon';
+import AdSlot from '../components/AdSlot';
 
 export default function HomePage() {
   const { language, currency, currentUser, setCurrentPage } = useStore();
@@ -251,6 +252,11 @@ export default function HomePage() {
             <path d="M0,50 C240,20 480,70 720,40 C960,10 1200,60 1440,30 L1440,80 L0,80 Z" fill="#f8fafc"/>
           </svg>
         </div>
+      </section>
+
+      {/* ═══════ AD: HERO ═══════ */}
+      <section className="max-w-7xl mx-auto px-4 -mt-4 relative z-10">
+        <AdSlot position="hero" />
       </section>
 
       {/* ═══════ PAIN POINTS ═══════ */}
@@ -639,9 +645,15 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ═══════ AD: INLINE ═══════ */}
+      <section className="max-w-7xl mx-auto px-4">
+        <AdSlot position="inline" />
+      </section>
+
       {/* ═══════ FOOTER ═══════ */}
       <footer className="bg-slate-900 text-white pt-12 pb-6">
         <div className="max-w-7xl mx-auto px-4">
+          <AdSlot position="footer" className="mb-8 !border-slate-700 !bg-slate-800" />
           {/* Top section */}
           <div className="grid md:grid-cols-4 gap-8 mb-10">
             {/* Brand */}

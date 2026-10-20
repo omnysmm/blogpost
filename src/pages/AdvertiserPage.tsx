@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
 import {
@@ -8,6 +8,7 @@ import {
   Zap, Crown, Star, AlertCircle, X, ChevronRight
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
+import { upsertCampaign, loadCampaignsLocal, seedDefaultCampaigns, computeAdAnalytics, campaignStats, removeCampaign, type AdCampaign as PlatformAd } from '../services/ads';
 
 type Tab = 'my-ads' | 'create' | 'tariffs' | 'stats' | 'settings';
 type Placement = 'site' | 'video' | 'both';
@@ -50,12 +51,31 @@ export default function AdvertiserPage() {
   };
 
   // ============ MY ADS ============
-  const [campaigns, setCampaigns] = useState<AdCampaign[]>([
-    { id: '1', title: language === 'ru' ? 'Продвижение интернет-магазина' : 'Online store promotion', placement: 'both', paymentModel: 'cpc', budget: 50000, spent: 12340, status: 'active', impressions: 45200, clicks: 892, ctr: 1.97, startDate: '2024-03-01', sitePosition: 'hero', videoPosition: 'mid-roll', mediaType: 'image' },
-    { id: '2', title: language === 'ru' ? 'Реклама мобильного приложения' : 'Mobile app ad', placement: 'video', paymentModel: 'cpm', budget: 30000, spent: 8900, status: 'active', impressions: 128000, clicks: 340, ctr: 0.27, startDate: '2024-03-05', videoPosition: 'pre-roll', mediaType: 'video' },
-    { id: '3', title: language === 'ru' ? 'Баннер новой коллекции' : 'New collection banner', placement: 'site', paymentModel: 'cpd', budget: 100000, spent: 50000, status: 'active', impressions: 89000, clicks: 1200, ctr: 1.35, startDate: '2024-03-10', sitePosition: 'hero', mediaType: 'image' },
-    { id: '4', title: language === 'ru' ? 'Акция — распродажа' : 'Sale promotion', placement: 'both', paymentModel: 'cpc', budget: 20000, spent: 0, status: 'draft', impressions: 0, clicks: 0, ctr: 0, startDate: '2024-03-20', mediaType: 'image' },
-  ]);
+  const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
+
+  useEffect(() => {
+    seedDefaultCampaigns();
+    const stored = loadCampaignsLocal().map((c: PlatformAd): AdCampaign => ({
+      id: c.id,
+      title: c.title,
+      placement: 'site',
+      paymentModel: (c.paymentModel as PaymentModel) || 'cpm',
+      budget: Number(c.budgetTotal || c.pricePerDay || 0),
+      spent: Number(c.budgetSpent || 0),
+      status:
+        c.status === 'active' ? 'active' :
+        c.status === 'paused' ? 'paused' :
+        c.status === 'draft' ? 'draft' : 'review',
+      impressions: Number(c.impressions || 0),
+      clicks: Number(c.clicks || 0),
+      ctr: campaignStats(c).ctr,
+      startDate: c.startDate || new Date().toISOString().slice(0, 10),
+      endDate: c.endDate,
+      sitePosition: c.position,
+      mediaType: 'image',
+    }));
+    if (stored.length) setCampaigns(stored);
+  }, []);
 
   // ============ CREATE AD FORM ============
   const [newAd, setNewAd] = useState({
@@ -95,25 +115,43 @@ export default function AdvertiserPage() {
   const totalClicks = campaigns.reduce((s, c) => s + c.clicks, 0);
   const avgCtr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : '0';
 
-  const handleCreateCampaign = () => {
-    const campaign: AdCampaign = {
-      id: Date.now().toString(),
-      title: newAd.title,
-      placement: newAd.placement,
-      paymentModel: newAd.paymentModel,
-      budget: parseFloat(newAd.budget) || 0,
-      spent: 0,
-      status: 'review',
-      impressions: 0,
-      clicks: 0,
-      ctr: 0,
-      startDate: newAd.startDate,
+  const handleCreateCampaign = async () => {
+    const modInput = {
+      title: newAd.title || 'Кампания',
+      description: newAd.description,
+      link: newAd.link,
+      position: (newAd.sitePosition || 'hero') as any,
+      paymentModel: (newAd.paymentModel || 'cpm') as any,
+      budgetTotal: parseFloat(newAd.budget) || 1000,
+      budgetDaily: Math.max(100, (parseFloat(newAd.budget) || 1000) / 30),
+      startDate: newAd.startDate || undefined,
       endDate: newAd.endDate || undefined,
-      videoPosition: newAd.videoPosition,
-      sitePosition: newAd.sitePosition,
-      mediaType: newAd.mediaType,
     };
-    setCampaigns(prev => [...prev, campaign]);
+    const saved = await upsertCampaign({
+      ...modInput,
+      type: newAd.paymentModel === 'cpc' ? 'clicks' : newAd.paymentModel === 'cpd' ? 'banner' : 'views',
+      pricePerDay: parseFloat(newAd.budget) || 3000,
+    });
+    setCampaigns(prev => [
+      ...prev.filter(c => c.id !== saved.id),
+      {
+        id: saved.id,
+        title: saved.title,
+        placement: newAd.placement,
+        paymentModel: newAd.paymentModel,
+        budget: saved.budgetTotal,
+        spent: saved.budgetSpent,
+        status: saved.status === 'active' ? 'active' : saved.status === 'rejected' ? 'rejected' : 'review',
+        impressions: saved.impressions,
+        clicks: saved.clicks,
+        ctr: 0,
+        startDate: newAd.startDate,
+        endDate: newAd.endDate || undefined,
+        videoPosition: newAd.videoPosition,
+        sitePosition: newAd.sitePosition,
+        mediaType: newAd.mediaType,
+      } as any,
+    ]);
     setCreated(true);
     setTimeout(() => {
       setShowCreateModal(false);

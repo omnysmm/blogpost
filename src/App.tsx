@@ -16,6 +16,7 @@ import AdvertiserPage from './pages/AdvertiserPage';
 import AdvertiserCabinetPage from './pages/AdvertiserCabinetPage';
 import SettingsPage from './pages/SettingsPage';
 import LegalPage from './pages/LegalPage';
+import { runAdMaintenance } from './services/ads';
 
 function App() {
   const { currentPage, currentUser, restoreSession, loadUserData, resetNetworkPublications, dataLoadedFor, processDuePosts, processDueAutoTasks, loadAutoTasks } = useStore();
@@ -47,6 +48,7 @@ function App() {
     loadAutoTasks();
     const tick = async () => {
       try {
+        runAdMaintenance();
         await processDueAutoTasks();
         await processDuePosts();
       } catch (e) {
