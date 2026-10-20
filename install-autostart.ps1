@@ -1,51 +1,52 @@
-# Install BlogPost autostart + 2-minute watchdog (ASCII-only for PS 5.1)
+# Install BlogPost autostart: TRAY at logon + quiet watchdog (no windows)
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$watchdog = Join-Path $root "watchdog.ps1"
-$logonTask = "BlogPost-Local-Server"
+$logonTask = "BlogPost-Tray"
 $watchTask = "BlogPost-Watchdog"
+$legacy = @("BlogPost-Local-Server", "BlogPost-Local-Server-Startup", "BlogPost-Tray-Startup")
 
-foreach ($n in @($logonTask, "$logonTask-Startup", $watchTask)) {
+foreach ($n in @($logonTask, $watchTask) + $legacy) {
   Unregister-ScheduledTask -TaskName $n -Confirm:$false -ErrorAction SilentlyContinue
 }
 
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$root\start-server.ps1`"" -WorkingDirectory $root
-$watchAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$watchdog`"" -WorkingDirectory $root
+# Remove Startup shortcut if present (it flashed a window)
+$startup = Join-Path ([Environment]::GetFolderPath('Startup')) "BlogPost Server.lnk"
+if (Test-Path $startup) { Remove-Item $startup -Force -ErrorAction SilentlyContinue }
 
+# 1) Tray at logon — Hidden, no window
+$trayAction = New-ScheduledTaskAction -Execute "powershell.exe" `
+  -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$root\tray.ps1`"" `
+  -WorkingDirectory $root
 $settings = New-ScheduledTaskSettingsSet `
   -AllowStartIfOnBatteries `
   -DontStopIfGoingOnBatteries `
   -StartWhenAvailable `
-  -ExecutionTimeLimit (New-TimeSpan -Minutes 2) `
+  -ExecutionTimeLimit (New-TimeSpan -Hours 0) `
   -MultipleInstances IgnoreNew
 
 Register-ScheduledTask `
   -TaskName $logonTask `
-  -Action $action `
+  -Action $trayAction `
   -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME) `
   -Settings $settings `
-  -Description "BlogPost Vite http://localhost:3000 (detached, at logon)" `
+  -Description "BlogPost tray + hidden Vite :3000 (no window)" `
   -Force | Out-Null
 
+# 2) Quiet watchdog every 5 min (was 2 min — less aggressive)
+$watchAction = New-ScheduledTaskAction -Execute "powershell.exe" `
+  -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$root\watchdog.ps1`"" `
+  -WorkingDirectory $root
 Register-ScheduledTask `
   -TaskName $watchTask `
   -Action $watchAction `
-  -Trigger (New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 2) -RepetitionDuration (New-TimeSpan -Days 3650)) `
+  -Trigger (New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 3650)) `
   -Settings $settings `
-  -Description "Restart BlogPost Vite if :3000 is down (every 2 min)" `
+  -Description "BlogPost watchdog (only if :3000 down, 5 min)" `
   -Force | Out-Null
 
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if ($isAdmin) {
-  Register-ScheduledTask `
-    -TaskName "$logonTask-Startup" `
-    -Action $action `
-    -Trigger (New-ScheduledTaskTrigger -AtStartup) `
-    -Settings $settings `
-    -Description "BlogPost Vite at boot" `
-    -Force | Out-Null
-  Write-Output "Registered boot task"
-}
+# Start tray now (hidden)
+Start-Process -FilePath "powershell.exe" `
+  -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$root\tray.ps1`"" `
+  -WorkingDirectory $root -WindowStyle Hidden
 
-& (Join-Path $root "start-server.ps1")
-Write-Output "Watchdog task: $watchTask (every 2 min)"
+Write-Output "Installed: $logonTask (tray, hidden) + $watchTask (5 min)"
