@@ -2,6 +2,7 @@
 // Photo upload via JSON base64 → local Vite proxy (reliable), edge, then direct multipart
 
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { readSocialsCache } from './socialAccounts';
 
 interface TelegramPublishResult {
   success: boolean;
@@ -16,14 +17,12 @@ interface ResolvedImage {
   mime: string;
 }
 
-// ═══ Get Telegram config from localStorage ═══
+// ═══ Get Telegram config from the offline mirror (kept in sync by socialAccounts.ts) ═══
 function getTelegramFromStorage(): { token: string; chatId: string } | null {
   try {
-    const saved = localStorage.getItem('blogpost_socials');
-    if (!saved) return null;
-    const socials = JSON.parse(saved);
+    const socials = readSocialsCache();
     const tg = socials.find((s: any) => s.network === 'telegram' && s.apiKey && s.apiKey.trim() !== '');
-    if (!tg) return null;
+    if (!tg?.apiKey) return null;
     return { token: tg.apiKey, chatId: tg.accountId || '' };
   } catch {
     return null;

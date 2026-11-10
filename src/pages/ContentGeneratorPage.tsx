@@ -22,6 +22,7 @@ import { publishToOk } from '../services/ok';
 import { publishToRutube, pickVideoFromHtml as pickRtVideo } from '../services/rutube';
 import { publishToInstagram } from '../services/instagram';
 import { getDueIso, publishPostToNetworks } from '../services/scheduler';
+import { readSocialsCache } from '../services/socialAccounts';
 import type { Post } from '../store/types';
 
 const standardAiModels = [
@@ -49,12 +50,6 @@ const premiumAiModels = [
 type ContentKind = 'post' | 'article' | 'video' | 'music' | 'voiceover' | 'editing';
 type AutoTask = import('../store/types').AutoTask;
 
-interface SocialConnectionLite {
-  network: string;
-  name: string;
-  connected: boolean;
-}
-
 const NETWORKS = [
   { id: 'vk', name: 'VK' },
   { id: 'telegram', name: 'Telegram' },
@@ -67,9 +62,7 @@ const NETWORKS = [
 
 function loadConnectedNetworks(): Record<string, boolean> {
   try {
-    const raw = localStorage.getItem('blogpost_socials');
-    if (!raw) return {};
-    const list = JSON.parse(raw) as SocialConnectionLite[];
+    const list = readSocialsCache();
     const map: Record<string, boolean> = {};
     list.forEach(s => { map[s.network] = !!s.connected; });
     return map;

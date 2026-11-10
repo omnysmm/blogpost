@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useStore, UserRole, Subscription } from '../store/useStore';
 import { translations } from '../i18n/translations';
 import { Shield, Users, Settings, FileText, Eye, Ban, Check, Search, RefreshCw, Undo2 } from 'lucide-react';
+import { fetchSiteSettings, saveSiteSettings } from '../services/crud';
 
 const SITE_KEY = 'blogpost_site_settings';
 
@@ -88,6 +89,15 @@ export default function AdminPage() {
     loadPlatformStats();
     loadAllUsers();
     loadAllPostsAdmin();
+    // Site settings: Supabase is the source of truth, localStorage = offline cache
+    fetchSiteSettings().then(remote => {
+      if (remote) {
+        const next = { ...loadSiteSettings(language), ...remote } as SiteSettings;
+        setSite(next);
+        try { localStorage.setItem(SITE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      }
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const flash = (msg: string) => {
@@ -389,8 +399,17 @@ export default function AdminPage() {
             <button
               disabled={busy}
               onClick={() => {
+                // Supabase first (errors surface), then offline mirror
+                saveSiteSettings(site).then(ok => {
+                  if (!ok) {
+                    flash(language === 'ru' ? 'Не удалось сохранить в Supabase — сохранено локально' : 'Supabase save failed — kept locally');
+                  } else {
+                    flash(language === 'ru' ? 'Настройки сайта сохранены' : 'Site settings saved');
+                  }
+                }).catch(() => {
+                  flash(language === 'ru' ? 'Не удалось сохранить в Supabase — сохранено локально' : 'Supabase save failed — kept locally');
+                });
                 localStorage.setItem(SITE_KEY, JSON.stringify(site));
-                flash(language === 'ru' ? 'Настройки сайта сохранены' : 'Site settings saved');
               }}
               className="px-6 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition"
             >

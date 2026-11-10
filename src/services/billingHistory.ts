@@ -78,14 +78,15 @@ export function recordPayment(input: {
   if (isSupabaseConfigured && input.userId) {
     void (async () => {
       try {
-        await supabase.from('payments').upsert({
+        await supabase.from('billing_entries').upsert({
           id: entry.id,
           user_id: input.userId,
+          kind: 'payment',
           amount: entry.amount,
           currency: entry.currency,
           description: entry.description,
+          method: entry.method,
           status: entry.status,
-          payment_method: entry.method,
           created_at: entry.createdAt,
         } as any);
       } catch { /* offline */ }
@@ -102,6 +103,7 @@ export function recordCharge(input: {
   method?: string;
   description?: string;
   at?: string;
+  userId?: string;
 }): BillingEntry {
   const entry: BillingEntry = {
     id: `chg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -118,6 +120,24 @@ export function recordCharge(input: {
   const list = loadLocalCharges();
   list.push(entry);
   saveLocalCharges(list);
+
+  if (isSupabaseConfigured && input.userId) {
+    void supabase.from('billing_entries').upsert({
+      id: entry.id,
+      user_id: input.userId,
+      kind: 'charge',
+      amount: entry.amount,
+      currency: entry.currency,
+      description: entry.description,
+      campaign_id: entry.campaignId || null,
+      campaign_title: entry.campaignTitle || '',
+      method: entry.method,
+      status: entry.status,
+      created_at: entry.createdAt,
+    } as any).then(({ error }) => {
+      if (error) console.error('billing_entries charge insert failed:', error.message);
+    });
+  }
   return entry;
 }
 
@@ -167,22 +187,24 @@ export function deriveChargesFromEvents(): BillingEntry[] {
 }
 
 export async function loadBillingHistory(userId?: string): Promise<BillingEntry[]> {
-  let remotePayments: BillingEntry[] = [];
+  let remote: BillingEntry[] = [];
   if (isSupabaseConfigured && userId) {
     try {
       const { data } = await supabase
-        .from('payments')
+        .from('billing_entries')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
-        .limit(100);
-      remotePayments = (data || []).map((p: any) => ({
+        .limit(500);
+      remote = (data || []).map((p: any) => ({
         id: String(p.id),
-        kind: (p.status === 'succeeded' ? 'payment' : 'payment') as BillingEntryKind,
-        amount: Math.abs(Number(p.amount || 0)),
+        kind: (p.kind as BillingEntryKind) || 'payment',
+        amount: Number(p.amount || 0),
         currency: p.currency || 'RUB',
         description: p.description || 'Платёж',
-        method: p.payment_method || 'yookassa',
+        campaignId: p.campaign_id || undefined,
+        campaignTitle: p.campaign_title || undefined,
+        method: p.method || '',
         status: (p.status as BillingEntry['status']) || 'succeeded',
         createdAt: p.created_at || new Date().toISOString(),
       }));
@@ -193,9 +215,9 @@ export async function loadBillingHistory(userId?: string): Promise<BillingEntry[
   const charges = loadLocalCharges();
   const derived = charges.length ? [] : deriveChargesFromEvents();
 
-  // de-dupe by id
+  // de-dupe by id — remote rows win
   const map = new Map<string, BillingEntry>();
-  for (const e of [...remotePayments, ...localPayments, ...charges, ...derived]) {
+  for (const e of [...localPayments, ...charges, ...derived, ...remote]) {
     if (!map.has(e.id)) map.set(e.id, e);
   }
   return [...map.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));

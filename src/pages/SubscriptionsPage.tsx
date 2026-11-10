@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
 import { Check, Star, Zap, Crown, CreditCard, ArrowRight, X, Sparkles, Loader2 } from 'lucide-react';
-import { createPayment, createBlockPayment } from '../services/payment';
+import { createPayment, createBlockPayment, planChangeKind, schedulePlanChange, activatePlanChange, type PlanId } from '../services/payment';
 
 export default function SubscriptionsPage() {
   const { language, currency, currentUser, setCurrentPage } = useStore();
@@ -18,6 +18,73 @@ export default function SubscriptionsPage() {
   const [promoCode, setPromoCode] = useState('');
   const [promoResult, setPromoResult] = useState<{ valid: boolean; discount: number; type: string } | null>(null);
   const [promoError, setPromoError] = useState('');
+  const [changingPlan, setChangingPlan] = useState<string | null>(null);
+  const [changeMsg, setChangeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Return from YooKassa: #/subscriptions?payment=success&plan=<id>
+  useEffect(() => {
+    const hash = window.location.hash || '';
+    if (!hash.includes('payment=success')) return;
+    const planMatch = hash.match(/plan=([a-z]+)/i);
+    const planId = (planMatch?.[1] || '') as PlanId;
+    const cleanup = () => {
+      window.location.hash = '#/subscriptions';
+    };
+    if (!planId || !currentUser?.id) {
+      cleanup();
+      return;
+    }
+    // Payment succeeded — activate the new plan (period +1 month)
+    activatePlanChange(currentUser.id, planId).then(({ ok, error }) => {
+      if (ok) {
+        setChangeMsg({
+          type: 'success',
+          text: language === 'ru'
+            ? `Тариф «${planId}» активирован на месяц`
+            : `Plan «${planId}» activated for a month`,
+        });
+        // Refresh the user so the UI reflects the new plan
+        window.location.reload();
+      } else {
+        setChangeMsg({ type: 'error', text: error || 'activation failed' });
+      }
+    });
+    cleanup();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
+
+  const flashChange = (type: 'success' | 'error', text: string) => {
+    setChangeMsg({ type, text });
+    setTimeout(() => setChangeMsg(null), 5000);
+  };
+
+  /** Downgrade/cancel — takes effect at period end. */
+  const handleScheduleChange = async (planId: PlanId) => {
+    if (!currentUser?.id) {
+      setCurrentPage('auth');
+      return;
+    }
+    setChangingPlan(planId);
+    try {
+      const { ok, error } = await schedulePlanChange(currentUser.id, planId);
+      if (ok) {
+        flashChange(
+          'success',
+          planId === 'free'
+            ? (language === 'ru'
+                ? 'Подписка будет отменена в конце оплаченного периода'
+                : 'Subscription will cancel at the end of the paid period')
+            : (language === 'ru'
+                ? `Смена на «${planId}» произойдёт в конце оплаченного периода`
+                : `Change to «${planId}» will apply at the end of the paid period`)
+        );
+      } else {
+        flashChange('error', error || 'schedule failed');
+      }
+    } finally {
+      setChangingPlan(null);
+    }
+  };
 
   const openPay = (mode: 'plan' | 'blocks', planId?: string) => {
     if (!currentUser) {
@@ -145,6 +212,37 @@ export default function SubscriptionsPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
+      {/* Change status messages */}
+      {changeMsg && (
+        <div className={`mb-6 px-4 py-3 rounded-xl text-sm font-medium ${changeMsg.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          {changeMsg.text}
+        </div>
+      )}
+      {/* Scheduled plan change (downgrade/cancel at period end) */}
+      {currentUser?.pendingSubscription && (
+        <div className="mb-6 px-4 py-3 rounded-xl text-sm bg-amber-50 text-amber-800 border border-amber-200 flex items-center justify-between gap-3">
+          <span>
+            {language === 'ru'
+              ? `Запланирована смена тарифа на «${currentUser.pendingSubscription}» в конце оплаченного периода`
+              : `Plan change to «${currentUser.pendingSubscription}» scheduled at the end of the paid period`}
+          </span>
+          <button
+            onClick={() => {
+              if (!currentUser?.id) return;
+              schedulePlanChange(currentUser.id, null).then(({ ok }) => {
+                if (ok) {
+                  flashChange('success', language === 'ru' ? 'Смена тарифа отменена' : 'Plan change cancelled');
+                  window.location.reload();
+                }
+              });
+            }}
+            className="px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 text-xs font-medium hover:bg-amber-100"
+          >
+            {language === 'ru' ? 'Отменить' : 'Cancel'}
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="text-center mb-12">
         <div className="inline-flex items-center gap-2 px-4 py-2 bg-purple-50 rounded-full text-purple-700 text-sm font-medium mb-4">
@@ -185,17 +283,42 @@ export default function SubscriptionsPage() {
                 {plan.price === 0 && <span className="text-slate-500 text-sm"> / {plan.period}</span>}
               </div>
               <button
-                onClick={() => openPay('plan', plan.id)}
+                onClick={() => {
+                  if (!currentUser) {
+                    setCurrentPage('auth');
+                    return;
+                  }
+                  const current = currentUser.subscription || 'free';
+                  const kind = planChangeKind(current, plan.id as PlanId);
+                  if (kind === 'none') return;
+                  if (kind === 'upgrade') openPay('plan', plan.id);
+                  else void handleScheduleChange(plan.id as PlanId);
+                }}
                 className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${
-                  currentUser?.subscription === plan.id
+                  planChangeKind(currentUser?.subscription || 'free', plan.id as PlanId) === 'none'
                     ? 'bg-slate-100 text-slate-500 cursor-default'
-                    : plan.popular
-                    ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white hover:shadow-lg hover:shadow-purple-200'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    : planChangeKind(currentUser?.subscription || 'free', plan.id as PlanId) === 'upgrade'
+                    ? plan.popular
+                      ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white hover:shadow-lg hover:shadow-purple-200'
+                      : 'bg-slate-900 text-white hover:bg-slate-800'
+                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
                 }`}
-                disabled={currentUser?.subscription === plan.id}
+                disabled={
+                  planChangeKind(currentUser?.subscription || 'free', plan.id as PlanId) === 'none' ||
+                  changingPlan === plan.id
+                }
               >
-                {currentUser?.subscription === plan.id ? t.currentPlan : t.subscribe}
+                {changingPlan === plan.id ? (
+                  <Loader2 size={16} className="animate-spin mx-auto" />
+                ) : planChangeKind(currentUser?.subscription || 'free', plan.id as PlanId) === 'none' ? (
+                  t.currentPlan
+                ) : planChangeKind(currentUser?.subscription || 'free', plan.id as PlanId) === 'upgrade' ? (
+                  language === 'ru' ? 'Улучшить' : 'Upgrade'
+                ) : plan.id === 'free' ? (
+                  language === 'ru' ? 'Отменить в конце периода' : 'Cancel at period end'
+                ) : (
+                  language === 'ru' ? 'Понизить в конце периода' : 'Downgrade at period end'
+                )}
               </button>
               <div className="mt-5 pt-5 border-t border-slate-100 space-y-2.5">
                 {plan.features.map((f, fi) => (

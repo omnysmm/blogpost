@@ -176,8 +176,7 @@ function saveEvents(events: AdEvent[]): void {
 }
 
 function logEvent(campaignId: string, kind: 'impression' | 'click', position: string, cost = 0) {
-  const events = loadEvents();
-  events.push({
+  const event = {
     id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     campaignId,
     kind,
@@ -185,8 +184,83 @@ function logEvent(campaignId: string, kind: 'impression' | 'click', position: st
     position,
     ts: Date.now(),
     cost,
-  });
+  };
+  const events = loadEvents();
+  events.push(event);
   saveEvents(events);
+
+  if (isSupabaseConfigured) {
+    void supabase.from('ad_events').insert({
+      id: event.id,
+      campaign_id: campaignId,
+      kind,
+      position,
+      date: event.date,
+      cost,
+    } as any).then(({ error }) => {
+      if (error) console.error('ad_events insert failed:', error.message);
+    });
+  }
+}
+
+/** Load campaigns: Supabase is the source of truth, localStorage = offline cache. */
+export async function hydrateCampaigns(userId?: string): Promise<AdCampaign[]> {
+  const mirror = loadCampaignsLocal();
+  if (!isSupabaseConfigured) return mirror;
+
+  try {
+    const { data, error } = await supabase
+      .from('ad_campaigns')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+
+    const remote = (data || []).map((r: any): AdCampaign => ({
+      id: r.id,
+      userId: r.user_id || userId,
+      title: r.title || '',
+      status: (r.status as AdStatus) || 'draft',
+      position: (r.site_position as AdPosition) || 'hero',
+      type: r.format || 'banner',
+      paymentModel: (r.payment_model as AdPaymentModel) || 'cpm',
+      pricePerDay: 0,
+      link: r.link || '#',
+      active: r.status === 'active',
+      impressions: r.impressions || 0,
+      clicks: r.clicks || 0,
+      budgetTotal: Number(r.budget_total || 0),
+      budgetDaily: Number(r.budget_daily || 0),
+      budgetSpent: Number(r.budget_spent || 0),
+      description: r.description || undefined,
+      imageUrl: r.media_url || undefined,
+      mediaUrl: r.media_url || undefined,
+      startDate: r.start_date || undefined,
+      endDate: r.end_date || undefined,
+      moderationNote: r.moderation_note || undefined,
+      viewsToday: r.views_today || 0,
+      spendToday: Number(r.spend_today || 0),
+      lastBillingAt: r.last_billing_at || undefined,
+    }));
+
+    if (remote.length > 0) {
+      saveCampaignsLocal(remote);
+      return remote;
+    }
+    if (mirror.length > 0) {
+      // One-time migration: push cache-only campaigns
+      for (const c of mirror) {
+        try {
+          await upsertCampaign(c);
+        } catch (e) {
+          console.error('hydrateCampaigns: migrate failed', c.id, e);
+        }
+      }
+    }
+    return mirror;
+  } catch (e) {
+    console.error('hydrateCampaigns failed, using offline cache:', e);
+    return mirror;
+  }
 }
 
 // ═══ Auto-moderation ═══

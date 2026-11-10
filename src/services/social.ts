@@ -2,6 +2,8 @@
 // Real publish goes through vk/telegram/youtube/tiktok/ok/rutube/instagram services.
 // This module is a thin dispatcher used by higher-level flows.
 
+import { readSocialsCache, removeSocial } from './socialAccounts';
+
 export type SocialNetwork = 'vk' | 'telegram' | 'youtube' | 'instagram' | 'tiktok' | 'ok' | 'rutube';
 
 interface SocialAccount {
@@ -63,33 +65,21 @@ export function initiateOAuth(network: SocialNetwork, userId?: string): void {
 // ═══ Get Connected Accounts ═══
 export async function getConnectedAccounts(_userId: string): Promise<SocialAccount[]> {
   try {
-    const raw = localStorage.getItem('blogpost_socials');
-    if (!raw) return [];
-    const list = JSON.parse(raw) as Array<{
-      network: string;
-      name?: string;
-      login?: string;
-      connected?: boolean;
-      connectedAt?: string;
-    }>;
+    const list = readSocialsCache();
     return list.map(s => ({
       network: s.network as SocialNetwork,
       accountName: s.login || s.name || s.network,
       connected: !!s.connected,
-      connectedAt: s.connectedAt,
+      connectedAt: undefined,
     }));
   } catch {
     return [];
   }
 }
 
-export async function disconnectAccount(_userId: string, network: SocialNetwork): Promise<boolean> {
+export async function disconnectAccount(userId: string, network: SocialNetwork): Promise<boolean> {
   try {
-    const raw = localStorage.getItem('blogpost_socials');
-    if (!raw) return false;
-    const list = JSON.parse(raw) as any[];
-    const next = list.map(s => (s.network === network ? { ...s, connected: false, apiKey: '' } : s));
-    localStorage.setItem('blogpost_socials', JSON.stringify(next));
+    await removeSocial(userId, network);
     return true;
   } catch {
     return false;

@@ -7,12 +7,11 @@ import { publishToTiktok, pickVideoFromHtml as pickTtVideo } from './tiktok';
 import { publishToOk } from './ok';
 import { publishToRutube, pickVideoFromHtml as pickRtVideo } from './rutube';
 import { publishToInstagram } from './instagram';
+import { readSocialsCache } from './socialAccounts';
 
 function loadConnectedNetworks(): Record<string, boolean> {
   try {
-    const raw = localStorage.getItem('blogpost_socials');
-    if (!raw) return {};
-    const list = JSON.parse(raw) as { network: string; connected: boolean }[];
+    const list = readSocialsCache();
     const map: Record<string, boolean> = {};
     list.forEach(s => { map[s.network] = !!s.connected; });
     return map;

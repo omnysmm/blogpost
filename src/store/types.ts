@@ -9,6 +9,8 @@ export interface User {
   email: string;
   role: UserRole;
   subscription: Subscription;
+  /** Scheduled plan change (downgrade/cancel) applied at period end. */
+  pendingSubscription?: Subscription | null;
   registeredAt: string;
   freeTrialEnd?: string;
   avatar?: string;

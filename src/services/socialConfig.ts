@@ -1,10 +1,13 @@
-// Shared social credentials from localStorage['blogpost_socials'] (Telegram-style fields)
+// Shared social credentials — served from the offline mirror kept in sync by
+// socialAccounts.ts (Supabase `social_accounts` is the source of truth).
 // VK:        apiKey = access_token, accountId = owner_id (e.g. -123456 or 123)
 // YouTube:   apiKey = access_token (OAuth), accountId = video privacy (public|unlisted|private) or channel title
 // TikTok:    apiKey = access_token, accountId = open_id (optional)
 // OK:        apiKey = access_token, accountId = "application_key|secret_key"
 // Rutube:    apiKey = Rutube-Api-Key, accountId = '1' private / '0' public
 // Instagram: apiKey = Graph access_token, accountId = ig_user_id (optional)
+
+import { getSocialEntry } from './socialAccounts';
 
 export type RealNetwork = 'vk' | 'youtube' | 'tiktok' | 'telegram' | 'ok' | 'rutube' | 'instagram';
 
@@ -20,27 +23,14 @@ export function loadSocialEntry(network: string): {
   accountId?: string;
   name?: string;
 } | null {
-  try {
-    const raw = localStorage.getItem('blogpost_socials');
-    if (!raw) return null;
-    const list = JSON.parse(raw) as Array<{
-      network: string;
-      connected?: boolean;
-      apiKey?: string;
-      accountId?: string;
-      name?: string;
-    }>;
-    const found = list.find(s => s.network === network);
-    if (!found) return null;
-    return {
-      connected: !!found.connected,
-      apiKey: found.apiKey,
-      accountId: found.accountId,
-      name: found.name,
-    };
-  } catch {
-    return null;
-  }
+  const found = getSocialEntry(network);
+  if (!found) return null;
+  return {
+    connected: !!found.connected,
+    apiKey: found.apiKey,
+    accountId: found.accountId,
+    name: found.name,
+  };
 }
 
 export function loadSocialCreds(network: RealNetwork): SocialCreds | null {

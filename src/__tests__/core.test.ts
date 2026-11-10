@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { ensureSeoEngagement } from '../services/ai';
 import { exportToCSV } from '../services/analytics';
 import { isDueNow, getDueIso } from '../services/scheduler';
-import { subscriptionDaysLeft, isSubscriptionExpiringSoon } from '../services/payment';
+import { subscriptionDaysLeft, isSubscriptionExpiringSoon, enforceSubscriptionExpiry, planChangeKind, planRank } from '../services/payment';
 import type { Post } from '../store/types';
 
 describe('ensureSeoEngagement', () => {
@@ -91,5 +91,50 @@ describe('subscription helpers', () => {
     const in2 = new Date(Date.now() + 2 * 86_400_000).toISOString();
     expect(isSubscriptionExpiringSoon(in2, 3)).toBe(true);
     expect(isSubscriptionExpiringSoon(null, 3)).toBe(false);
+  });
+
+  it('downgrades expired plan to free', async () => {
+    const expired = {
+      id: 'u1',
+      subscription: 'pro',
+      freeTrialEnd: new Date(Date.now() - 86_400_000).toISOString(),
+    };
+    const out = await enforceSubscriptionExpiry(expired);
+    expect(out.subscription).toBe('free');
+    // original object untouched
+    expect(expired.subscription).toBe('pro');
+  });
+
+  it('keeps active plan', async () => {
+    const active = {
+      id: 'u2',
+      subscription: 'premium',
+      freeTrialEnd: new Date(Date.now() + 10 * 86_400_000).toISOString(),
+    };
+    const out = await enforceSubscriptionExpiry(active);
+    expect(out.subscription).toBe('premium');
+  });
+
+  it('keeps free plan without expiry date', async () => {
+    const free = { id: 'u3', subscription: 'free' };
+    const out = await enforceSubscriptionExpiry(free);
+    expect(out.subscription).toBe('free');
+  });
+});
+
+describe('plan change kind', () => {
+  it('ranks plans', () => {
+    expect(planRank('free')).toBeLessThan(planRank('basic'));
+    expect(planRank('basic')).toBeLessThan(planRank('pro'));
+    expect(planRank('pro')).toBeLessThan(planRank('premium'));
+  });
+
+  it('detects upgrade / downgrade / same', () => {
+    expect(planChangeKind('basic', 'pro')).toBe('upgrade');
+    expect(planChangeKind('pro', 'basic')).toBe('downgrade');
+    expect(planChangeKind('free', 'premium')).toBe('upgrade');
+    expect(planChangeKind('premium', 'free')).toBe('downgrade');
+    expect(planChangeKind('pro', 'pro')).toBe('none');
+    expect(planChangeKind('free', 'free')).toBe('none');
   });
 });

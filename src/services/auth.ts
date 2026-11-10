@@ -1,6 +1,7 @@
 // Centralized auth: Supabase email/password + custom OAuth (VK, Yandex, OK)
 // No Google — RU providers only, per product requirements.
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { enforceSubscriptionExpiry } from './payment';
 import type { User, UserRole, Subscription } from '../store/types';
 
 export type SocialProvider = 'vk' | 'yandex' | 'ok';
@@ -32,6 +33,7 @@ export function mapProfile(row: Record<string, any>): User {
     email: row.email || '',
     role: (row.role as UserRole) || 'user',
     subscription: (row.subscription as Subscription) || 'free',
+    pendingSubscription: (row.pending_subscription as Subscription) || null,
     registeredAt: row.created_at || new Date().toISOString(),
     freeTrialEnd: row.free_trial_end || undefined,
     avatar: row.avatar_url || undefined,
@@ -45,7 +47,8 @@ async function fetchProfile(userId: string): Promise<User | null> {
     .eq('id', userId)
     .single();
   if (error || !data) return null;
-  return mapProfile(data);
+  // Downgrade expired plans client-side (server cron is the source of truth)
+  return enforceSubscriptionExpiry(mapProfile(data));
 }
 
 /** Ensure a profiles row exists (trigger should create it; this is a safety net). */

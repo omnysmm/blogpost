@@ -268,6 +268,31 @@ export async function fetchPlatformStats() {
 
 // ═══ Export to CSV ═══
 
+// ═══ Site Settings (admin) ═══
+
+export async function fetchSiteSettings(): Promise<Record<string, any> | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase
+    .from('site_settings')
+    .select('value')
+    .eq('key', 'general')
+    .single();
+  if (error) return null;
+  return (data?.value as Record<string, any>) || null;
+}
+
+export async function saveSiteSettings(value: Record<string, any>): Promise<boolean> {
+  if (!isSupabaseConfigured) return false;
+  const { error } = await supabase
+    .from('site_settings')
+    .upsert({ key: 'general', value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  if (error) {
+    console.error('saveSiteSettings failed:', error.message);
+    return false;
+  }
+  return true;
+}
+
 export function exportToCSV(data: any[], filename: string) {
   if (data.length === 0) return;
   const headers = Object.keys(data[0]);

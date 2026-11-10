@@ -25,6 +25,93 @@ export const BLOCKS: Record<string, { name: string; price: number }> = {
   schedule: { name: 'Автопубликация', price: 1000 },
 };
 
+// ═══════════════════════════════════════════════════════════════
+// Plan upgrade / downgrade / cancel
+// ═══════════════════════════════════════════════════════════════
+
+export type PlanId = 'free' | 'basic' | 'pro' | 'premium';
+
+const PLAN_RANK: Record<PlanId, number> = { free: 0, basic: 1, pro: 2, premium: 3 };
+
+export function planRank(plan: string): number {
+  return PLAN_RANK[(plan as PlanId)] ?? 0;
+}
+
+/** 'upgrade' → paid now (new period), 'downgrade' → scheduled at period end, 'none' → same plan. */
+export function planChangeKind(current: string, next: string): 'upgrade' | 'downgrade' | 'none' {
+  if (current === next) return 'none';
+  return planRank(next) > planRank(current) ? 'upgrade' : 'downgrade';
+}
+
+function supabaseRestHeaders() {
+  return {
+    'Content-Type': 'application/json',
+    'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+    'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+    'Prefer': 'return=minimal',
+  };
+}
+
+/**
+ * Schedule a downgrade/cancel to take effect at the end of the paid period.
+ * The cron sweep (expire_subscriptions) applies `pending_subscription` later.
+ * Pass `null` to clear a previously scheduled change.
+ */
+export async function schedulePlanChange(
+  userId: string,
+  nextPlan: PlanId | null
+): Promise<{ ok: boolean; error?: string }> {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  if (!supabaseUrl) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${userId}`, {
+      method: 'PATCH',
+      headers: supabaseRestHeaders(),
+      body: JSON.stringify({
+        pending_subscription: nextPlan,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+/** Cancel a scheduled change (stay on the current plan). */
+export async function cancelScheduledChange(userId: string): Promise<{ ok: boolean; error?: string }> {
+  return schedulePlanChange(userId, null);
+}
+
+/** Apply an upgrade immediately after a successful payment (period +1 month). */
+export async function activatePlanChange(userId: string, planId: PlanId): Promise<{ ok: boolean; error?: string }> {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  if (!supabaseUrl) {
+    return { ok: false, error: 'supabase_not_configured' };
+  }
+  const trialEnd = new Date();
+  trialEnd.setMonth(trialEnd.getMonth() + 1);
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${userId}`, {
+      method: 'PATCH',
+      headers: supabaseRestHeaders(),
+      body: JSON.stringify({
+        subscription: planId,
+        pending_subscription: null,
+        free_trial_end: trialEnd.toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+    });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
 // ═══ Create Payment ═══
 export async function createPayment(userId: string, planId: string): Promise<{ confirmationUrl: string; paymentId?: string } | null> {
   const plan = PLANS[planId];
@@ -162,6 +249,40 @@ export function subscriptionDaysLeft(expiresAt: string | null): number | null {
 export function isSubscriptionExpiringSoon(expiresAt: string | null, days = 3): boolean {
   const left = subscriptionDaysLeft(expiresAt);
   return left !== null && left <= days;
+}
+
+/**
+ * Client-side enforcement of expiry: downgrade the plan when the trial/paid
+ * period is over and persist it. Server-side cron (expire_subscriptions /
+ * subscription-expiry edge fn) is the source of truth; this keeps the UI
+ * honest between sweeps.
+ */
+export async function enforceSubscriptionExpiry<T extends { id: string; subscription: string; freeTrialEnd?: string }>(
+  user: T
+): Promise<T> {
+  if (user.subscription === 'free') return user;
+  if (!user.freeTrialEnd) return user;
+  if (new Date(user.freeTrialEnd).getTime() > Date.now()) return user;
+
+  const downgraded: T = { ...user, subscription: 'free' as string };
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  if (supabaseUrl) {
+    try {
+      await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({ subscription: 'free', updated_at: new Date().toISOString() }),
+      });
+    } catch {
+      // offline — server cron will catch up
+    }
+  }
+  return downgraded;
 }
 
 // ═══ Request Refund ═══

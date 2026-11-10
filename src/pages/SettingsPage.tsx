@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { translations } from '../i18n/translations';
 import {
@@ -9,6 +9,7 @@ import {
   HelpCircle, ExternalLink, Copy
 } from 'lucide-react';
 import SocialIcon from '../components/SocialIcon';
+import { hydrateSocials, saveSocials as persistSocials, readSocialsCache, type SocialEntry } from '../services/socialAccounts';
 
 type SettingsTab = 'social' | 'schedule' | 'payment' | 'plans';
 
@@ -69,9 +70,9 @@ export default function SettingsPage() {
 
   const loadSocials = (): SocialConnection[] => {
     try {
-      const saved = localStorage.getItem('blogpost_socials');
-      if (saved) {
-        const parsed: SocialConnection[] = JSON.parse(saved);
+      const saved = readSocialsCache();
+      if (saved.length) {
+        const parsed: SocialConnection[] = saved as SocialConnection[];
         // Merge missing networks and fix display names (VK, ОК)
         const missing = defaultSocials.filter(d => !parsed.some(p => p.network === d.network));
         const renamed = parsed.map(p => {
@@ -86,9 +87,23 @@ export default function SettingsPage() {
 
   const [socials, setSocials] = useState<SocialConnection[]>(loadSocials);
 
+  // Pull credentials from Supabase (source of truth) and refresh the offline mirror.
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    let cancelled = false;
+    hydrateSocials(currentUser.id).then(() => {
+      if (!cancelled) setSocials(loadSocials());
+    }).catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
+
   const saveSocials = (updated: SocialConnection[]) => {
     setSocials(updated);
-    localStorage.setItem('blogpost_socials', JSON.stringify(updated));
+    // Supabase first (awaited, errors surface), then the offline mirror.
+    persistSocials(currentUser?.id ?? null, updated as SocialEntry[]).catch(err => {
+      showSaveError(err instanceof Error ? err.message : 'Failed to save social accounts');
+    });
   };
   const [editingSocial, setEditingSocial] = useState<string | null>(null);
   const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({});
